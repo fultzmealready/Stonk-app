@@ -279,7 +279,6 @@ with st.form("trade_submit_form", clear_on_submit=False):
         pl_pct = ((exitp - entry) / entry * 100.0) if entry > 0 and exitp > 0 else float("nan")
         # append directly to Google Sheet
         append_trade_row(
-            id=str(uuid.uuid4()),
             time_str=pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"),
             symbol=sym,
             side=side,
