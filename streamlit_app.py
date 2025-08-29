@@ -3,6 +3,7 @@ import time, math, datetime as dt
 import pandas as pd
 import streamlit as st
 import numpy as np
+import plotly.express as px
 from zoneinfo import ZoneInfo
 
 from taapi_client import taapi_bulk, make_stock_construct, get_taapi_candles
