@@ -340,6 +340,72 @@ else:
     st.caption("No trades logged yet.")
 
 st.divider()
+with st.expander("📈 Expectancy Roadmap (playbook-aligned)", expanded=True):
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    start_equity = c1.number_input("Start equity ($)",  min_value=50.0, value=float(settings.get("account_size", 500.0)), step=50.0)
+    risk_pct     = c2.number_input("Risk per trade (%)", min_value=1.0, value=float(settings.get("risk_pct", 25.0)), step=0.5)
+    win_rate     = c3.slider("Win rate (%)", 10, 80, 45, step=1)
+    avg_win_pct  = c4.number_input("Avg win (%)",  min_value=10.0, value=100.0, step=5.0, help="Playbook sweet spot: +100%")
+    avg_loss_pct = c5.number_input("Avg loss (%)", min_value=5.0,  value=30.0,  step=1.0, help="Playbook stop: −30%")
+    weeks        = c6.slider("Weeks", 4, 52, 24, step=1)
+
+    # Trading cadence
+    d1, d2, d3 = st.columns(3)
+    trades_per_day = d1.number_input("Trades per day",   min_value=1, value=4, step=1)
+    days_per_week  = d2.number_input("Days per week",    min_value=1, value=5, step=1)
+    # Optional: RH slippage tag
+    _ = d3.caption("Tip: +120% raw target ≈ +100% net on RH fills.")
+
+    # Expectancy per trade (in % of risk)
+    p = win_rate / 100.0
+    E = p*avg_win_pct - (1-p)*avg_loss_pct                  # e.g., 0.45*100 - 0.55*30 = 15.5
+    exp_ret_per_trade = (risk_pct/100.0) * (E/100.0)        # as a fraction of equity
+
+    trades_per_week = int(trades_per_day * days_per_week)
+    total_trades = trades_per_week * int(weeks)
+
+    # Deterministic expected curve (compounding on expected value)
+    # equity_T = equity_0 * (1 + exp_ret_per_trade)^T
+    trades = np.arange(0, total_trades + 1, dtype=int)
+    equity_by_trade = start_equity * (1.0 + exp_ret_per_trade) ** trades
+
+    # Week summary
+    week_idx = np.arange(0, total_trades + 1, trades_per_week)
+    week_equity = equity_by_trade[week_idx]
+    df_week = pd.DataFrame({"Week": np.arange(len(week_equity)), "Equity": week_equity})
+
+    # Milestones
+    milestones = [1_000, 10_000, 100_000, 1_000_000]
+    hit = {}
+    for m in milestones:
+        hit_week = next((int(w) for w, eq in zip(df_week["Week"], df_week["Equity"]) if eq >= m), None)
+        hit[m] = hit_week
+
+    # Header metrics
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Expectancy per trade", f"{E:.1f}% of risk", help="p*AvgWin - (1-p)*AvgLoss")
+    m2.metric("Exp. return / trade",  f"{exp_ret_per_trade*100:.2f}%")
+    m3.metric("Trades / week",        f"{trades_per_week}")
+    m4.metric("Total trades",         f"{total_trades}")
+
+    # Chart
+    fig = px.line(df_week, x="Week", y="Equity", title="Expected Equity (deterministic)")
+    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10), height=360)
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Milestone table
+    st.caption("Milestones (expected—not guarantees):")
+    mt = pd.DataFrame(
+        {"Target": ["$1k", "$10k", "$100k", "$1M"],
+         "Week hit": [hit[1_000], hit[10_000], hit[100_000], hit[1_000_000]]}
+    )
+    st.dataframe(mt, hide_index=True, use_container_width=True)
+
+    # Guidance callouts
+    st.info("🎯 Suggested target: **+100%** (highest expectancy). **+120% raw** is the Robinhood-adjusted alternative.", icon="🎯")
+    st.caption("Formulae: Expectancy = p·AvgWin − (1−p)·AvgLoss. Equity(T) ≈ E0·(1 + risk·Expectancy)^T")
+
+st.divider()
 render_discipline_panel(tl_df, settings, downshift_risk_to=12.5)
 # ====== Auto-refresh ======
 stop_now = st.session_state.guardrails_hit  # pause refresh if guardrails tripped
