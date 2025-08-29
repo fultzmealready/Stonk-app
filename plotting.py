@@ -96,7 +96,10 @@ def plot_with_orb_em(ticker: str, df: pd.DataFrame, orb_minutes: int = 15):
         pass
 
     # Tighten to data window
-    fig.update_xaxes(range=[df.index.min(), df.index.max()])
+    if not df.empty:
+        end_time = df.index.max()
+        start_time = end_time - pd.Timedelta(hours=hours_shown)
+        fig.update_xaxes(range=[start_time, end_time])
 
     fig.update_layout(
         title=f"{ticker} — 24h",
