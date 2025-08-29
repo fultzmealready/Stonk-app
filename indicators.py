@@ -21,10 +21,66 @@ def get_value_by_id(results: dict, id_contains: str, default=float("nan")):
                 return float(num)
     return default
 
-def compute_vwap_from_df(df):
-    tp = (df["High"] + df["Low"] + df["Close"]) / 3.0
-    return (tp * df["Volume"]).cumsum() / df["Volume"].cumsum().replace(0, np.nan)
+def compute_vwap_from_df(
+    df: pd.DataFrame,
+    *,
+    tz: str = "America/New_York",
+    reset: str = "daily",          # "daily" (default) or "none"
+    rth_only: bool = False,        # only keep 09:30–16:00 ET if True
+) -> pd.Series:
+    """
+    Session-reset VWAP.
+    - Resets at each ET calendar day (09:30 reset still works because cum starts new day).
+    - Treats Volume==0 as NaN so zero-vol candles don't freeze VWAP.
+    - Optional RTH-only masking.
+    """
+    if df is None or df.empty:
+        return pd.Series(dtype="float64")
 
+    d = df.copy()
+
+    # Make sure we have the columns in Title case
+    cols = {c.lower(): c for c in d.columns}
+    for need in ["open", "high", "low", "close", "volume"]:
+        if need not in cols:
+            # try title-casing
+            if need.title() not in d.columns:
+                return pd.Series(dtype="float64")
+            cols[need] = need.title()
+
+    d.rename(columns={cols["open"]:"Open", cols["high"]:"High",
+                      cols["low"]:"Low", cols["close"]:"Close",
+                      cols["volume"]:"Volume"}, inplace=True)
+
+    # Localize/convert to ET for session logic
+    idx = pd.to_datetime(d.index)
+    if idx.tz is None:
+        idx = idx.tz_localize("UTC")
+    idx = idx.tz_convert(ZoneInfo(tz))
+    d = d.set_index(idx)
+
+    # Optional RTH filter (keeps NaN outside RTH so the plot shows gaps)
+    """if rth_only:
+        mask = d.index.indexer_between_time("09:30", "16:00")
+        keep = pd.Series(False, index=d.index)
+        keep.iloc[mask] = True
+        d = d.where(keep)"""
+
+    # Typical price and volume; ignore zero-volume
+    tp = (d["High"] + d["Low"] + d["Close"]) / 3.0
+    vol = d["Volume"].replace(0, np.nan)
+
+    if reset == "none":
+        vwap = (tp * vol).cumsum() / vol.cumsum()
+        return vwap
+
+    # Reset daily (ET)
+    day = d.index.date
+    cum_tpvol = (tp * vol).groupby(day).cumsum()
+    cum_vol   = vol.groupby(day).cumsum()
+    vwap = cum_tpvol / cum_vol
+    return vwap
+2) Use it in your chart code
 def first5_momentum(df):
     if df is None or df.empty: return None
     df5 = df.resample("5min").agg({"Open":"first","High":"max","Low":"min","Close":"last","Volume":"sum"})
