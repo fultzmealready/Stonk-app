@@ -3,6 +3,20 @@ import plotly.graph_objs as go
 import pandas as pd
 from indicators import compute_opening_range, compute_vwap_from_df
 
+def shade_rth(fig: go.Figure, df: pd.DataFrame, tz="America/New_York", fillcolor="LightGreen", opacity=0.10) -> None:
+    """
+    Add vertical rectangles for each day's 9:30–16:00 ET RTH window.
+    """
+    # df index should already be timezone-aware or naive UTC; for simple shading we assume index in ET or localized by data source
+    for day in df.index.normalize().unique():
+        rth_start = day + pd.Timedelta(hours=9, minutes=30)
+        rth_end   = day + pd.Timedelta(hours=16, minutes=0)
+        fig.add_vrect(
+            x0=rth_start, x1=rth_end,
+            fillcolor=fillcolor, opacity=opacity, layer="below", line_width=0,
+            annotation_text="RTH", annotation_position="top left"
+        )
+
 def plot_with_orb_em(ticker: str, df: pd.DataFrame, orb_minutes: int = 15):
     fig = go.Figure()
 
