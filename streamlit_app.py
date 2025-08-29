@@ -275,72 +275,54 @@ with st.form("trade_submit_form", clear_on_submit=False):
     submitted = st.form_submit_button("Add trade", disabled=disable_form)
 
     if submitted:
-        # Pull the latest live values from session_state
-        entry_val = float(st.session_state.get("entry_live", 0.0))
-        exitp_val = float(st.session_state.get("exit_live", 0.0))
-        notes_val = st.session_state.get("notes_live", "")
-
-        time_str = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
-        base_df = tl_df if not tl_df.empty else pd.DataFrame(columns=expected_columns())
-
-        new_df = append_trade_row(
-            time_str=time_str, symbol=sym, side=side, strike=strike, qty=qty,
-            entry=entry, exitp=exitp, notes=notes
-        )
-       
-        st.success("Trade added to log.")
-        st.toast(f"Targets: +100% ${tgt100:.2f}, +120% ${tgt120:.2f} • Stop: ${stop30:.2f}", icon="🎯")
-        st.rerun()
-
-
-# ====== P/L + table + download ======
-df = load_trades()
-st.write(df)
-st.caption(f"Today's P/L (approx): ${todays_pl:.2f}")
-
-if not df.empty:
-    # make sure we have IDs
-    df = ensure_id_column(df)
-
-    # show last N (or all) with a checkbox column for delete
-    view = df.sort_values("time").tail(100).copy()  # adjust window if you like
-    view.insert(0, "__delete__", False)
-
-    edited = st.data_editor(
-        view,
-        hide_index=True,
-        use_container_width=True,
-        column_config={
-            "__delete__": st.column_config.CheckboxColumn("Delete?", help="Check rows to delete"),
-            "id": st.column_config.TextColumn("ID", help="Internal row id", disabled=True),
-        },
-        disabled=False,
-        num_rows="fixed",
+    pl_pct = ((exitp - entry) / entry * 100.0) if entry > 0 and exitp > 0 else float("nan")
+    # append directly to Google Sheet
+    append_trade_row(
+        time_str=pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"),
+        symbol=sym,
+        side=side,
+        strike=strike,
+        qty=qty,
+        entry=entry,
+        exitp=exitp,
+        notes=notes,
+        p_l_pct=pl_pct,
     )
+    st.success("Trade added to Google Sheet.")
+    st.rerun()
 
-    # gather the IDs the user checked
-    to_delete_ids = edited.loc[edited["__delete__"] == True, "id"].astype(str).tolist()
 
-    col_del, col_dl_all = st.columns([1,1])
-    with col_del:
-        del_btn = st.button(
-            f"Delete selected ({len(to_delete_ids)})",
-            type="primary",
-            disabled=(len(to_delete_ids) == 0),
-            help="Remove the checked rows from the trade log",
+# ==== Load from Google Sheets ====
+df = load_trades()  # returns a DataFrame from your Sheet
+
+st.caption(f"Today's P/L (approx): ${todays_pl:.2f}")
+if df is not None and not df.empty:
+    # make sure types are right
+    if "time" in df.columns:
+        df["date"] = pd.to_datetime(df["time"], errors="coerce").dt.date
+        tdf_today = df[df["date"] == pd.Timestamp.now().date()].copy()
+    else:
+        tdf_today = pd.DataFrame([])
+
+    if not tdf_today.empty:
+        # p_l_pct is percent; entry is $/contract; qty contracts
+        tdf_today["pl_$"] = tdf_today.apply(
+            lambda r: (float(r.get("p_l_pct", 0)) / 100.0) * float(r.get("entry", 0)) * int(r.get("qty", 0)),
+            axis=1
         )
-    with col_dl_all:
-        st.download_button(
-            "Download full trade log (CSV)",
-            data=tl_df.to_csv(index=False).encode("utf-8"),
-            file_name="0dte_trade_log.csv",
-            mime="text/csv",
-        )
+        todays_pl = float(tdf_today["pl_$"].sum())
 
-    if del_btn and to_delete_ids:
-        new_df = delete_by_ids(to_delete_ids)
-        st.success(f"Deleted {len(to_delete_ids)} trade(s).")
-        st.rerun()
+    # show tail of trades
+    show_cols = [c for c in df.columns if c != "date"]
+    st.dataframe(df.tail(20)[show_cols], use_container_width=True, hide_index=True)
+
+    # download full sheet snapshot
+    st.download_button(
+        "Download full trade log (CSV)",
+        data=df.to_csv(index=False).encode("utf-8"),
+        file_name="0dte_trade_log.csv",
+        mime="text/csv"
+    )
 else:
     st.caption("No trades logged yet.")
 
