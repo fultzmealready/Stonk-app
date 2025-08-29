@@ -1,7 +1,9 @@
-import math
+import math, time, random
 import pandas as pd
+import numpy as np
 import yfinance as yf
-from indicators import compute_vwap_from_df 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from indicators import compute_vwap_from_df
 
 
 def get_intraday_1m_yf(ticker: str, period: str = "2d", include_ext_hours: bool = True) -> pd.DataFrame:
@@ -23,65 +25,95 @@ def get_intraday_1m_yf(ticker: str, period: str = "2d", include_ext_hours: bool 
     except Exception:
         return pd.DataFrame()
 
+def _prep(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame()
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = [c[0] for c in df.columns]
+    df = df.rename(columns=str.title)
+    cols = [c for c in ["Open","High","Low","Close","Volume"] if c in df.columns]
+    return df[cols].dropna(how="all")
+
+def _to_float(x):
+    try:
+        if isinstance(x, pd.Series):
+            x = x.iloc[-1]
+        return float(x)
+    except Exception:
+        return float("nan")
+
+def _fetch_1m_with_retry(ticker: str, attempts: int = 3, period: str = "2d") -> pd.DataFrame:
+    """
+    yfinance 1m can be flaky. Try up to `attempts` times with jittered backoff.
+    Includes pre/post so we get premkt.
+    """
+    last_err = None
+    for i in range(attempts):
+        try:
+            df = yf.download(
+                ticker, period=period, interval="1m",
+                auto_adjust=False, prepost=True, progress=False
+            )
+            df = _prep(df)
+            if not df.empty:
+                return df
+        except Exception as e:
+            last_err = e
+        # backoff with a tiny jitter (don’t hammer)
+        time.sleep(0.6 * (2 ** i) + random.random() * 0.3)
+    # if all attempts failed, return empty frame
+    return pd.DataFrame()
 
 def sector_breadth_yf(tickers):
     """
     Returns:
       rows = [(ticker, last, vwap, is_green), ...]
-      breadth_pct = % of rows where last > vwap
+      breadth_pct = % of non-NaN rows where last > vwap
+    Strategy:
+      - per-ticker downloads with retry
+      - small thread pool (avoid yfinance rate limits)
+      - daily-reset VWAP with per-day forward-fill
     """
-
-    def _to_float(x):
-        """Always return a scalar float (NaN on failure)."""
-        try:
-            if isinstance(x, pd.Series):
-                x = x.iloc[-1]
-            return float(x)
-        except Exception:
-            return float("nan")
-
-    # Pull 1m for today
-    try:
-        data = yf.download(
-            tickers,
-            period="1d",
-            interval="1m",
-            auto_adjust=False,
-            progress=False,
-            group_by="ticker",
-        )
-    except Exception:
-        data = None
-
     rows = []
     green = 0
     total = 0
 
-    for t in tickers:
-        # Get per-ticker frame (or fallback)
-        try:
-            if data is not None:
-                df = data[t]
-                if isinstance(df.columns, pd.MultiIndex):
-                    df.columns = [c[0] for c in df.columns]
-                df = df.rename(columns=str.title).dropna()
-            else:
-                df = get_intraday_1m_yf(t)  # your existing helper
-        except Exception:
-            df = pd.DataFrame()
+    # modest parallelism; too many threads => throttling / partial data
+    max_workers = min(4, max(1, len(tickers)))
+    results = {}
 
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futs = {ex.submit(_fetch_1m_with_retry, t): t for t in tickers}
+        for fut in as_completed(futs):
+            t = futs[fut]
+            try:
+                df = fut.result()
+            except Exception:
+                df = pd.DataFrame()
+            results[t] = df
+
+    for t in tickers:
+        df = results.get(t, pd.DataFrame())
         if df is None or df.empty or "Close" not in df.columns:
             rows.append((t, float("nan"), float("nan"), False))
             continue
 
-        # ---- SCALARS ONLY ----
+        # latest price as scalar
         last = _to_float(df["Close"].iloc[-1])
-        vwap_s = compute_vwap_from_df(df)
-        vwap = _to_float(vwap_s.iloc[-1] if vwap_s is not None and not vwap_s.empty else np.nan)
+
+        # session-reset VWAP (not RTH-only), fill per-day to bridge zero-volume minutes
+        vwap_s = compute_vwap_from_df(df, reset="daily", rth_only=False)
+        if vwap_s is None or vwap_s.empty:
+            vwap = float("nan")
+        else:
+            try:
+                vwap_s = vwap_s.groupby(vwap_s.index.date).ffill()
+            except Exception:
+                vwap_s = vwap_s.ffill()
+            vwap = _to_float(vwap_s.iloc[-1])
 
         ok = not (math.isnan(last) or math.isnan(vwap))
-        is_green = (ok and last > vwap)
-
+        is_green = ok and last > vwap
         rows.append((t, last if ok else float("nan"), vwap if ok else float("nan"), is_green))
         if ok:
             total += 1
@@ -90,6 +122,7 @@ def sector_breadth_yf(tickers):
 
     breadth_pct = (green / total * 100.0) if total else float("nan")
     return rows, breadth_pct
+
 
 def get_futures_quote(sym):
     try:
