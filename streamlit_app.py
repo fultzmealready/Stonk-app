@@ -1,4 +1,3 @@
-
 # streamlit_app.py — 0DTE Cockpit (SPY/QQQ) — TAAPI-first Charts
 # - Charts: TAAPI.io candles by default (fallback to yfinance)
 # - Bias engine (VWAP, ORB, breadth, futures)
@@ -11,7 +10,9 @@
 # - Single chart section (VWAP + ORB + EM band)
 # - Trade logger & CSV
 #
-# ENV on Windows (PowerShell):  setx TAAPI_SECRET "your_taapi_key_here"
+# ENV (Streamlit Cloud secrets):
+#   TAAPI_SECRET="your_taapi_key_here"
+#   (optional) TAAPI_URL="https://api.taapi.io/bulk"
 
 import os, time, math, datetime as dt
 import numpy as np, pandas as pd
@@ -20,17 +21,30 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import plotly.graph_objs as go
 from zoneinfo import ZoneInfo
-import streamlit as st
 
 st.set_page_config(page_title="0DTE Cockpit — SPY & QQQ", layout="wide")
 
-# ====== Config ======
-TAAPI_URL = "https://api.taapi.io/bulk"
+# ====== Secrets & Config ======
+def _get_secret(name, default=""):
+    # flat key
+    if name in st.secrets:
+        return st.secrets.get(name, default)
+    # nested block support, e.g. [taapi] secret="..."
+    if "taapi" in st.secrets and isinstance(st.secrets["taapi"], dict):
+        low = name.lower()
+        if low in st.secrets["taapi"]:
+            return st.secrets["taapi"][low]
+    # env fallback (local dev)
+    return os.getenv(name, default)
 
+TAAPI_SECRET = _get_secret("TAAPI_SECRET")
+if not TAAPI_SECRET:
+    st.error("Missing **TAAPI_SECRET**. Add it in your app’s *Settings → Secrets* (or env var) and rerun.")
+    st.stop()
 
-TAAPI_KEY = st.secrets.get("TAAPI_KEY")
+TAAPI_URL = _get_secret("TAAPI_URL", "https://api.taapi.io/bulk")
 
-INTERVAL = "1m"
+INTERVAL = "1m"                  # TAAPI stocks/ETFs: 1m, 5m, 15m, 30m, 1h, 4h, 1d, 1w
 DEFAULT_REFRESH_SECS = 5
 TRADE_LOG = "0dte_trade_log.csv"
 SECTORS = ["XLB","XLE","XLF","XLI","XLK","XLP","XLU","XLV","XLY","XLC","XLRE"]
@@ -52,43 +66,75 @@ CORE_INDIS = [
 # ====== Robust HTTP for TAAPI ======
 def make_session():
     s = requests.Session()
-    retries = Retry(total=5, connect=5, read=5, backoff_factor=1.0,
-                    status_forcelist=[429,500,502,503,504], allowed_methods=["POST"],
-                    raise_on_status=False, raise_on_redirect=False)
+    retries = Retry(
+        total=5, connect=5, read=5, backoff_factor=1.0,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["POST"],
+        raise_on_status=False, raise_on_redirect=False,
+    )
     s.mount("https://", HTTPAdapter(max_retries=retries))
     s.headers.update({"Content-Type": "application/json", "Accept": "application/json"})
     return s
+
 SESSION = make_session()
 
-# ====== TAAPI helpers ======
+# ====== TAAPI helpers (STOCKS/ETFs: no exchange prefix) ======
+def make_stock_construct(symbol: str, interval: str, indicators: list[dict]) -> dict:
+    """
+    TAAPI 'stocks' style construct: use SYMBOL:INTERVAL (no exchange).
+    Example: 'SPY:1m'
+    """
+    return {"construct": f"{symbol.upper()}:{interval}", "indicators": indicators}
+
 def taapi_bulk(constructs, timeout_sec=45):
-    payload = {"secret": TAAPI_SECRET, "construct": constructs if len(constructs)!=1 else constructs[0]}
+    """POST /bulk with one or more constructs. Return a dict[id -> result]."""
     try:
-        r = SESSION.post(TAAPI_URL, json=payload, timeout=(5, timeout_sec)); r.raise_for_status()
-        data = r.json().get("data", [])
-        return {it.get("id"): it.get("result", {}) for it in data}
-    except Exception:
+        payload = {"secret": TAAPI_SECRET, "construct": constructs if len(constructs) != 1 else constructs[0]}
+        r = SESSION.post(TAAPI_URL, json=payload, timeout=(5, timeout_sec))
+        r.raise_for_status()
+        j = r.json()
+        data = j.get("data", [])
+        # Map TAAPI items by their 'id' so we can fuzzy-match later
+        out = {}
+        for it in data:
+            _id = it.get("id")
+            res = it.get("result", {})
+            if _id:
+                out[_id] = res
+        # if TAAPI returned a different shape, at least return something debuggable
+        if not out and isinstance(j, dict):
+            # fallback: map whole response
+            out["__raw__"] = j
+        return out
+    except requests.exceptions.HTTPError as e:
+        body = ""
+        try:
+            body = r.text[:800]
+        except Exception:
+            pass
+        st.error(f"TAAPI bulk call failed: HTTP {getattr(r,'status_code', '???')} — {e}\n\nResponse: `{body}`")
+        return {}
+    except requests.exceptions.RequestException as e:
+        st.error(f"Network/timeout error calling TAAPI: {e}")
+        return {}
+    except Exception as e:
+        st.error(f"Unexpected TAAPI error: {e}")
         return {}
 
-def make_stock_construct(symbol, interval, indicators):
-    return {"type":"stocks","symbol":symbol,"interval":interval,"indicators":indicators}
-
 def get_taapi_candles(symbol, interval="1m", limit=300, timeout_sec=45):
-    """Fetch OHLCV candles from taapi.io via the 'candles' indicator. Return DataFrame or empty DataFrame on error."""
+    """Fetch OHLCV candles via TAAPI 'candles' indicator for STOCKS/ETFs."""
     try:
-        constructs = [{
-            "type": "stocks",
-            "symbol": symbol,
-            "interval": interval,
-            "indicators": [{"indicator": "candles", "backtrack": int(limit)}]
-        }]
-        payload = {"secret": TAAPI_SECRET, "construct": constructs[0]}
+        construct = {
+            "construct": f"{symbol.upper()}:{interval}",
+            "indicators": [{"indicator": "candles", "backtrack": int(limit)}],
+        }
+        payload = {"secret": TAAPI_SECRET, "construct": construct}
         r = SESSION.post(TAAPI_URL, json=payload, timeout=(5, timeout_sec))
         r.raise_for_status()
         data = r.json().get("data", [])
         if not data:
             return pd.DataFrame()
-        item = data[0].get("result", {})
+        item = data[0].get("result", {}) if isinstance(data[0], dict) else {}
         values = item.get("values") or item.get("result") or item.get("data")
         if not isinstance(values, list) or not values:
             return pd.DataFrame()
@@ -103,11 +149,12 @@ def get_taapi_candles(symbol, interval="1m", limit=300, timeout_sec=45):
             if ts is None or o is None or h is None or l is None or cl is None:
                 continue
             ts = int(ts)
-            idx = pd.to_datetime(ts, unit="ms" if ts>10_000_000_000 else "s")
+            idx = pd.to_datetime(ts, unit="ms" if ts > 10_000_000_000 else "s")
             records.append([idx, float(o), float(h), float(l), float(cl), float(v)])
         if not records:
             return pd.DataFrame()
-        df = pd.DataFrame(records, columns=["Datetime","Open","High","Low","Close","Volume"]).set_index("Datetime").sort_index()
+        df = pd.DataFrame(records, columns=["Datetime","Open","High","Low","Close","Volume"])\
+               .set_index("Datetime").sort_index()
         return df
     except Exception:
         return pd.DataFrame()
@@ -124,11 +171,13 @@ def first_numeric(d):
                     if isinstance(vv,(int,float)): return float(vv)
     return float("nan")
 
-def get_value_by_id(results, id_contains, default=float("nan")):
+def get_value_by_id(results: dict, id_contains: str, default=float("nan")):
+    # Fuzzy match TAAPI item ids
     for id_str, result in results.items():
         if id_contains in id_str:
             num = first_numeric(result)
-            if isinstance(num,(int,float)) and not math.isnan(num): return float(num)
+            if isinstance(num,(int,float)) and not math.isnan(num):
+                return float(num)
     return default
 
 def compute_vwap_from_df(df):
@@ -241,7 +290,7 @@ def compute_opening_range(df, minutes=15):
     return start_ts, end_ts, or_high, or_low
 
 # Confidence meter inputs from TAAPI
-def taapi_confidence_bits(core, prefix):
+def taapi_confidence_bits(core: dict, prefix: str):
     rsi = get_value_by_id(core, prefix + "rsi_14_")
     macd_hist = float("nan")
     for k, v in core.items():
@@ -325,14 +374,20 @@ with st.sidebar:
 st.header("0DTE Cockpit — SPY & QQQ")
 
 # ====== TAAPI indicators for confidence + core prices ======
+# Use stock constructs: "SYMBOL:INTERVAL" (no exchange)
 core = taapi_bulk([
     make_stock_construct("SPY", INTERVAL, CORE_INDIS),
     make_stock_construct("QQQ", INTERVAL, CORE_INDIS),
 ], timeout_sec=60)
-spy_last = get_value_by_id(core, "stocks_SPY_1m_price_")
-qqq_last = get_value_by_id(core, "stocks_QQQ_1m_price_")
-spy_vwap = get_value_by_id(core, "stocks_SPY_1m_vwap_")
-qqq_vwap = get_value_by_id(core, "stocks_QQQ_1m_vwap_")
+
+# For stocks, TAAPI bulk ids look like "<SYMBOL>_<INTERVAL>_<indicator>_..."
+SPY_PREFIX = f"SPY_{INTERVAL}_"
+QQQ_PREFIX = f"QQQ_{INTERVAL}_"
+
+spy_last = get_value_by_id(core, SPY_PREFIX + "price_")
+qqq_last = get_value_by_id(core, QQQ_PREFIX + "price_")
+spy_vwap = get_value_by_id(core, SPY_PREFIX + "vwap_")
+qqq_vwap = get_value_by_id(core, QQQ_PREFIX + "vwap_")
 
 # ====== Futures & Expected Move ======
 colF1, colF2, colF3 = st.columns(3)
@@ -344,8 +399,8 @@ with colF2: st.metric("NQ=F last", f"{nq_last:.2f}" if not math.isnan(nq_last) e
 with colF3: st.metric("SPX/VIX EM (±)", f"{em_spx:.1f}" if not math.isnan(em_spx) else "—", f"VIX {vix_last:.1f}" if not math.isnan(vix_last) else "")
 
 # ====== Candles for charts — TAAPI-first with fallback to yfinance ======
-spy_df = get_taapi_candles("SPY")
-qqq_df = get_taapi_candles("QQQ")
+spy_df = get_taapi_candles("SPY", interval=INTERVAL)
+qqq_df = get_taapi_candles("QQQ", interval=INTERVAL)
 if spy_df is None or spy_df.empty: spy_df = get_intraday_1m_yf("SPY")
 if qqq_df is None or qqq_df.empty: qqq_df = get_intraday_1m_yf("QQQ")
 
@@ -368,11 +423,21 @@ st.dataframe(pd.DataFrame(rows, columns=["Sector","Last","VWAP","Green"])
 es_green = (es_chg > 0) if not math.isnan(es_chg) else None
 nq_green = (nq_chg > 0) if not math.isnan(nq_chg) else None
 score, decision, parts = compute_bias(spy_last, qqq_last, spy_vwap, qqq_vwap, breadth_pct, f5_spy, f5_qqq, es_green, nq_green)
-spy_bits = taapi_confidence_bits(core, "stocks_SPY_1m_"); qqq_bits = taapi_confidence_bits(core, "stocks_QQQ_1m_")
+spy_bits = taapi_confidence_bits(core, SPY_PREFIX); qqq_bits = taapi_confidence_bits(core, QQQ_PREFIX)
 conf_label_spy, conf_score_spy, _ = confidence_label(spy_bits, decision)
 conf_label_qqq, conf_score_qqq, _ = confidence_label(qqq_bits, decision)
 
 # ====== Candle Watch ======
+def candle_emojis(df, n=3):
+    if df is None or df.empty: return "—"
+    closes = df["Close"].tail(n).tolist(); opens = df["Open"].tail(n).tolist()
+    out = []
+    for o, c in zip(opens, closes):
+        if c > o: out.append("🟩")
+        elif c < o: out.append("🟥")
+        else: out.append("➖")
+    return " ".join(out)
+
 spy_1m_watch = candle_emojis(spy_df, n=3); qqq_1m_watch = candle_emojis(qqq_df, n=3)
 spy_5m_watch = candle_emojis(resample_5m(spy_df), n=1); qqq_5m_watch = candle_emojis(resample_5m(qqq_df), n=1)
 
@@ -493,7 +558,6 @@ else:
 
 # ====== Max daily loss guardrail ======
 daily_limit = st.session_state.get("daily_limit_value", None)
-# (Already defined from sidebar in previous versions; here we just display today's P/L message.)
 st.caption(f"Today's P/L (approx): ${todays_pl:.2f}")
 
 # ====== Charts — VWAP + ORB + EM band (single section) ======
