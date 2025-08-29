@@ -4,6 +4,26 @@ import pandas as pd
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+def _get_secret(name: str, default: str = "") -> str:
+    # exact key
+    if name in st.secrets:
+        return st.secrets.get(name, default)
+    # fallbacks
+    for alt in ("TAAPI_SECRETS", "TAAPI_KEY", "TAAPI_API_KEY"):
+        if alt in st.secrets:
+            return st.secrets.get(alt, default)
+    # nested block [taapi]
+    tb = st.secrets.get("taapi", {})
+    if isinstance(tb, dict):
+        for k in ("secret","api_key","key"):
+            if k in tb:
+                return tb[k]
+    # env
+    return os.getenv(name, default)
+
+TAAPI_SECRET = _get_secret("TAAPI_SECRET")
+TAAPI_URL = os.getenv("TAAPI_URL", "https://api.taapi.io/bulk")
+
 def make_session():
     s = requests.Session()
     retries = Retry(
