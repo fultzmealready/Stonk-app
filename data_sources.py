@@ -1,6 +1,8 @@
 import math
 import pandas as pd
 import yfinance as yf
+from indicators import compute_vwap_from_df 
+
 
 def get_intraday_1m_yf(ticker: str, period: str = "2d", include_ext_hours: bool = True) -> pd.DataFrame:
     try:
@@ -21,14 +23,24 @@ def get_intraday_1m_yf(ticker: str, period: str = "2d", include_ext_hours: bool 
         return pd.DataFrame()
 
 
-def sector_breadth_yf(tickers):
+def sector_breadth_yf(tickers: list[str]) -> tuple[list[tuple], float]:
+    """
+    For each sector, compute last and VWAP, and % of sectors above VWAP.
+    """
     try:
-        data = yf.download(tickers, period="1d", interval="1m", auto_adjust=False, progress=False, group_by='ticker')
+        data = yf.download(
+            tickers, period="1d", interval="1m",
+            auto_adjust=False, progress=False, group_by="ticker", prepost=False
+        )
     except Exception:
         data = None
+
     rows = []
-    green = 0; total = 0
+    green = 0
+    total = 0
+
     for t in tickers:
+        # get a 1m df for this ticker
         try:
             df = data[t] if data is not None else get_intraday_1m_yf(t)
             if isinstance(df.columns, pd.MultiIndex):
@@ -36,16 +48,26 @@ def sector_breadth_yf(tickers):
             df = df.rename(columns=str.title).dropna()
         except Exception:
             df = pd.DataFrame()
+
         if df is None or df.empty:
             rows.append((t, float("nan"), float("nan"), False))
             continue
-        last = float(df["Close"].iloc[-1])
-        vwap = float(compute_vwap_from_df(df).iloc[-1])
+
+        # robust scalars (avoid FutureWarning)
+        last_scalar = pd.to_numeric(df["Close"].iloc[-1], errors="coerce")
+        vwap_series = compute_vwap_from_df(df)
+        vwap_scalar = pd.to_numeric(vwap_series.iloc[-1], errors="coerce")
+        last = float(last_scalar) if pd.notna(last_scalar) else float("nan")
+        vwap = float(vwap_scalar) if pd.notna(vwap_scalar) else float("nan")
+
         ok = not (math.isnan(last) or math.isnan(vwap))
         is_green = (ok and last > vwap)
         rows.append((t, last if ok else float("nan"), vwap if ok else float("nan"), is_green))
         if ok:
-            total += 1; green += 1 if is_green else 0
+            total += 1
+            if is_green:
+                green += 1
+
     breadth = (green / total * 100.0) if total else float("nan")
     return rows, breadth
 
