@@ -352,7 +352,7 @@ else:
 st.caption(f"Today's P/L (approx): ${todays_pl:.2f}")
 
 st.divider()
-render_expectancy_panel(df, settinngs)
+render_expectancy_panel(df, settings)
 
 st.divider()
 with st.expander("📈 Expectancy Roadmap (playbook-aligned)", expanded=True):
