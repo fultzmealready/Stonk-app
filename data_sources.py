@@ -19,6 +19,7 @@ def get_intraday_1m_yf(ticker: str, period: str = "2d", include_ext_hours: bool 
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = [c[0] for c in df.columns]
         return df.rename(columns=str.title).dropna()
+        df.index = df.index.tz_localize("UTC").tz_convert("America/New_York") 
     except Exception:
         return pd.DataFrame()
 
