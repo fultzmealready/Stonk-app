@@ -175,10 +175,10 @@ st.subheader(f"Charts — 1m (24h) with VWAP + Opening Range ({ORB_MINUTES}m)")
 colC1, colC2 = st.columns(2, gap="large")
 with colC1:
     if spy_df.empty: st.warning("No SPY 1m data.")
-    else: st.plotly_chart(plot_with_orb_em("SPY", spy_df, orb_minutes=15, hours_shown=6)use_container_width=True, key="spy_chart")
+    else: st.plotly_chart(plot_with_orb_em("SPY", spy_df, orb_minutes=15, hours_shown=6), use_container_width=True, key="spy_chart")
 with colC2:
     if qqq_df.empty: st.warning("No QQQ 1m data.")
-    else: sst.plotly_chart(plot_with_orb_em("QQQ", spy_df, orb_minutes=15, hours_shown=6)use_container_width=True, key="qqq_chart")
+    else: sst.plotly_chart(plot_with_orb_em("QQQ", spy_df, orb_minutes=15, hours_shown=6), use_container_width=True, key="qqq_chart")
 
 # ====== Guardrails: load log, compute today's P/L, set thresholds ======
 # Requires: TRADE_LOG constant and 'settings' dict already set.
