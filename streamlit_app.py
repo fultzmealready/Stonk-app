@@ -95,15 +95,24 @@ f5_spy = first5_momentum(spy_df); f5_qqq = first5_momentum(qqq_df)
 sSPY, eSPY, orhSPY, orlSPY = compute_opening_range(spy_df, minutes=ORB_MINUTES)
 sQQQ, eQQQ, orhQQQ, orlQQQ = compute_opening_range(qqq_df, minutes=ORB_MINUTES)
 
-rows, breadth_pct = sector_breadth_yf(SECTORS)
+st.cache_data(ttl=30, show_spinner=False)   # cache for 30s
+def _cached_breadth(tickers):
+    return sector_breadth_yf(tickers)
+
+rows, breadth_pct = _cached_breadth(SECTORS)
+
 st.subheader("Sector breadth: price > VWAP")
-if not math.isnan(breadth_pct):
-    st.progress(int(min(max(breadth_pct,0),100)))
-    st.caption(f"{breadth_pct:.0f}% sectors green • {sum([1 for r in rows if not math.isnan(r[1])]):d} loaded")
+loaded = sum(1 for r in rows if not math.isnan(r[1]))
+if not math.isnan(breadth_pct) and loaded:
+    st.progress(int(min(max(breadth_pct, 0), 100)))
+    st.caption(f"{breadth_pct:.0f}% sectors green • {loaded}/{len(SECTORS)} loaded")
 else:
-    st.caption("Waiting for sector data...")
-st.dataframe(pd.DataFrame(rows, columns=["Sector","Last","VWAP","Green"])
-             .style.format({"Last":"{:.2f}","VWAP":"{:.2f}"}), use_container_width=True)
+    st.caption(f"Waiting for sector data… {loaded}/{len(SECTORS)} loaded")
+
+st.dataframe(
+    pd.DataFrame(rows, columns=["Sector", "Last", "VWAP", "Green"]).style.format({"Last":"{:.2f}","VWAP":"{:.2f}"}),
+    use_container_width=True
+)
 
 # ====== Bias & Confidence ======
 es_green = (es_chg > 0) if not math.isnan(es_chg) else None
