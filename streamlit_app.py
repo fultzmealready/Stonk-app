@@ -18,7 +18,9 @@ from indicators import (
 from plotting import plot_with_orb_em
 from trade_log import (
     expected_columns, ensure_id_column, 
-    compute_daily_pl, compute_levels
+    compute_daily_pl, compute_levels,
+    load_trade_log, save_trade_log,
+    delete_and_save, append_trade,
 )
 
 from sheets_store import load_trades
