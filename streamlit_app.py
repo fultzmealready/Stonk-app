@@ -331,8 +331,6 @@ else:
     st.caption("No trades logged yet.")
 
 st.divider()
-render_expectancy_panel(tl_df, settings)
-st.divider()
 render_discipline_panel(tl_df, settings, downshift_risk_to=12.5)
 # ====== Auto-refresh ======
 stop_now = st.session_state.guardrails_hit  # pause refresh if guardrails tripped
