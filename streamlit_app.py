@@ -211,6 +211,17 @@ with st.form("trade_log_form", clear_on_submit=False):
 tl_df = load_trade_log(TRADE_LOG)
 todays_pl = compute_daily_pl(tl_df)
 
+st.caption(f"Today's P/L (approx): ${todays_pl:.2f}")
+if not tl_df.empty:
+    show_cols = [c for c in tl_df.columns if c in expected_columns()]
+    st.dataframe(tl_df.tail(20)[show_cols], use_container_width=True, hide_index=True)
+    st.download_button("Download full trade log (CSV)",
+                       data=tl_df.to_csv(index=False).encode("utf-8"),
+                       file_name="0dte_trade_log.csv", mime="text/csv")
+else:
+    st.caption("No trades logged yet.")
+
+
 # Guardrails thresholds
 acct_size = acct
 up_guard  = 0.30 * acct_size   # +30%
