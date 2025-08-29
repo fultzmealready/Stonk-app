@@ -287,15 +287,14 @@ with st.form("trade_submit_form", clear_on_submit=False):
             time_str=time_str, symbol=sym, side=side, strike=strike, qty=qty,
             entry=entry, exitp=exitp, notes=notes
         )
-        save_trades(df)
+       
         st.success("Trade added to log.")
         st.toast(f"Targets: +100% ${tgt100:.2f}, +120% ${tgt120:.2f} • Stop: ${stop30:.2f}", icon="🎯")
         st.rerun()
 
 
 # ====== P/L + table + download ======
-SHEET_NAME = "Streamlit_app"  # your Google Sheet name (exactly as it appears in Google Drive)
-df = load_trade_log(SHEET_NAME)
+df = load_trades()
 
 st.caption(f"Today's P/L (approx): ${todays_pl:.2f}")
 
