@@ -295,7 +295,7 @@ with st.form("trade_submit_form", clear_on_submit=False):
 
 # ====== P/L + table + download ======
 df = load_trades()
-
+st.write(df)
 st.caption(f"Today's P/L (approx): ${todays_pl:.2f}")
 
 if not df.empty:
