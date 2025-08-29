@@ -1,3 +1,7 @@
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
 def make_session():
     s = requests.Session()
     retries = Retry(
