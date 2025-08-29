@@ -294,7 +294,8 @@ with st.form("trade_submit_form", clear_on_submit=False):
 
 
 # ====== P/L + table + download ======
-df = load_trades("Streamlit.app")
+SHEET_NAME = "Streamlit_app"  # your Google Sheet name (exactly as it appears in Google Drive)
+df = load_trade_log(SHEET_NAME)
 
 st.caption(f"Today's P/L (approx): ${todays_pl:.2f}")
 
