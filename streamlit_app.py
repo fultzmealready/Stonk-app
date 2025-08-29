@@ -4,6 +4,8 @@ import pandas as pd
 import streamlit as st
 import numpy as np
 import plotly.express as px
+import gspread
+from google.oauth2.service_account import Credentials
 from zoneinfo import ZoneInfo
 
 from taapi_client import taapi_bulk, make_stock_construct, get_taapi_candles
@@ -15,9 +17,14 @@ from indicators import (
 )
 from plotting import plot_with_orb_em
 from trade_log import (
-    load_trade_log, save_trade_log, expected_columns, delete_and_save, ensure_id_column, 
-    compute_daily_pl, compute_levels, append_trade
+    expected_columns, ensure_id_column, 
+    compute_daily_pl, compute_levels
 )
+
+from sheets_store import load_trades as load_trade_log
+from sheets_store import save_trades as save_trade_log
+from sheets_store import append_trade_row as append_trade
+from sheets_store import delete_by_ids as delete_trades_by_id
 from discipline import render_discipline_panel
 
 from guardrails import check_daily_limits
