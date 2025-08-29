@@ -178,15 +178,18 @@ def compute_vwap_from_df(df):
     tp = (df["High"] + df["Low"] + df["Close"]) / 3.0
     return (tp * df["Volume"]).cumsum() / df["Volume"].cumsum().replace(0, np.nan)
 
-def get_intraday_1m_yf(ticker, period="1d"):
+def get_intraday_1m_yf(ticker, period="2d"):  # keep 2d for buffer
     try:
-        df = yf.download(ticker, period=period, interval="1m", auto_adjust=False, progress=False)
+        df = yf.download(
+            ticker, period=period, interval="1m", auto_adjust=False, progress=False, prepost=True
+        )
         if df.empty: return pd.DataFrame()
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = [c[0] for c in df.columns]
         return df.rename(columns=str.title).dropna()
     except Exception:
         return pd.DataFrame()
+
 
 def first5_momentum(df):
     if df is None or df.empty: return None
@@ -547,24 +550,31 @@ colC1, colC2 = st.columns(2, gap="large")
 
 def plot_with_orb_em(ticker, df):
     fig = go.Figure()
-    fig.add_trace(go.Candlestick(x=df.index, open=df["Open"], high=df["High"], low=df["Low"], close=df["Close"], name="Price"))
+    fig.add_trace(go.Candlestick(
+        x=df.index, open=df["Open"], high=df["High"], low=df["Low"], close=df["Close"], name="Price"
+    ))
+
+    # VWAP
     vwap_series = compute_vwap_from_df(df)
     fig.add_trace(go.Scatter(x=df.index, y=vwap_series, mode="lines", name="VWAP"))
-    s, e, orh, orl = compute_opening_range(df, minutes=ORB_MINUTES)
-    if s is not None and e is not None and not (math.isnan(orh) or math.isnan(orl)):
-        fig.add_hrect(y0=orl, y1=orh, x0=s, x1=e, opacity=0.15, line_width=0, fillcolor="LightSkyBlue")
-        fig.add_hline(y=orh, line_dash="dot", opacity=0.5); fig.add_hline(y=orl, line_dash="dot", opacity=0.5)
-    try:
-        last_px = float(df["Close"].iloc[-1])
-        spx_last, vix_last, em_spx = expected_move_vix()
-        if not math.isnan(em_spx) and spx_last>0:
-            pct = em_spx / spx_last
-            up = last_px * (1 + pct); dn = last_px * (1 - pct)
-            fig.add_hline(y=up, line_dash="dash", opacity=0.2)
-            fig.add_hline(y=dn, line_dash="dash", opacity=0.2)
-    except Exception:
-        pass
-    fig.update_layout(title=f"{ticker} — 1m", height=420, xaxis_rangeslider_visible=False, margin=dict(l=10,r=10,t=50,b=10))
+
+    # Regular Trading Hours shading
+    for day in df.index.normalize().unique():
+        rth_start = day + pd.Timedelta(hours=9, minutes=30)
+        rth_end   = day + pd.Timedelta(hours=16, minutes=0)
+        fig.add_vrect(
+            x0=rth_start, x1=rth_end,
+            fillcolor="LightGreen", opacity=0.1, layer="below", line_width=0,
+            annotation_text="RTH", annotation_position="top left"
+        )
+        # Before 9:30 and after 16:00 will show up as unshaded (off-hours)
+
+    fig.update_layout(
+        title=f"{ticker} — 24h",
+        height=420,
+        xaxis_rangeslider_visible=False,
+        margin=dict(l=10, r=10, t=50, b=10)
+    )
     return fig
 
 with colC1:
