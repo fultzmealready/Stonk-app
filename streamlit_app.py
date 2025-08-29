@@ -176,7 +176,6 @@ if guardrails_hit:
     st.error("🛑 STOP TRADING — Daily guardrail hit "
              + ("(+30% target reached)" if breach_up else "(−20% loss limit)"))
 
-
 # ====== Trade Logger ======
 st.subheader("Trade Logger")
 
@@ -189,8 +188,7 @@ with st.form("trade_log_form", clear_on_submit=False):
     with col2:
         side = st.selectbox("Direction", ["CALL","PUT"], index=0, disabled=disable_form)
     with col3:
-        # default strike near last
-        base_last = spy_last if sym=="SPY" else qqq_last
+        base_last = spy_last if sym == "SPY" else qqq_last
         strike_default = float("nan") if (base_last is None or math.isnan(base_last)) else float(round(base_last))
         strike = st.number_input("Strike", min_value=0.0, value=strike_default, step=1.0, disabled=disable_form)
     with col4:
@@ -207,9 +205,9 @@ with st.form("trade_log_form", clear_on_submit=False):
     # Live preview of targets/stop
     tgt100, tgt120, stop30 = compute_levels(entry if entry > 0 else float("nan"))
     cA, cB, cC = st.columns(3)
-    cA.metric("+100% target", f"${tgt100:.2f}" if tgt100==tgt100 else "—")
-    cB.metric("+120% raw",   f"${tgt120:.2f}" if tgt120==tgt120 else "—")
-    cC.metric("−30% stop",   f"${stop30:.2f}" if stop30==stop30 else "—")
+    cA.metric("+100% target", f"${tgt100:.2f}" if tgt100 == tgt100 else "—")
+    cB.metric("+120% raw",    f"${tgt120:.2f}" if tgt120 == tgt120 else "—")
+    cC.metric("−30% stop",    f"${stop30:.2f}" if stop30 == stop30 else "—")
 
     submitted = st.form_submit_button("Add trade", disabled=disable_form)
 
@@ -223,40 +221,28 @@ with st.form("trade_log_form", clear_on_submit=False):
         )
         save_trade_log(new_df, TRADE_LOG)
         st.success("Trade added to log.")
-
-        # Toast the guard levels for quick reference
-        st.toast(f"Targets: +100% ${tgt100:.2f}, +120% ${tgt120:.2f} • Stop: ${stop30:.2f}", icon="🎯")
-
-        # Soft reminder of daily guardrails
-        st.toast(f"Daily guardrails: STOP TRADING if P/L ≥ ${up_guard:.0f} or ≤ ${down_guard:.0f}", icon="⚠️")
-        st.rerun()
-
-        save_trade_log(new_df, TRADE_LOG)
-        st.success("Trade added to log.")
         st.toast(f"Targets: +100% ${tgt100:.2f}, +120% ${tgt120:.2f} • Stop: ${stop30:.2f}", icon="🎯")
         st.toast(f"Daily guardrails: STOP TRADING if P/L ≥ ${up_guard:.0f} or ≤ ${down_guard:.0f}", icon="⚠️")
 
-        # refresh local copies
-        tl_df = new_df
-        todays_pl = compute_daily_pl(tl_df)
+        # Refresh and rerun so table/metrics update consistently
         st.rerun()
 
-
-# Load existing log and compute today's P/L
+# ====== P/L + table + download ======
 st.caption(f"Today's P/L (approx): ${todays_pl:.2f}")
 if not tl_df.empty:
     show_cols = [c for c in tl_df.columns if c in expected_columns()]
     st.dataframe(tl_df.tail(20)[show_cols], use_container_width=True, hide_index=True)
-    st.download_button("Download full trade log (CSV)",
-                       data=tl_df.to_csv(index=False).encode("utf-8"),
-                       file_name="0dte_trade_log.csv", mime="text/csv")
+    st.download_button(
+        "Download full trade log (CSV)",
+        data=tl_df.to_csv(index=False).encode("utf-8"),
+        file_name="0dte_trade_log.csv",
+        mime="text/csv"
+    )
 else:
     st.caption("No trades logged yet.")
 
-
-
 # ====== Auto-refresh ======
-stop_now = guardrails_hit 
+stop_now = guardrails_hit  # pause refresh if guardrails tripped
 if settings["enable_refresh"] and not stop_now:
     time.sleep(settings["refresh_secs"])
     st.rerun()
