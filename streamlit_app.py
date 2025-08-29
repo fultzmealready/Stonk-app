@@ -352,6 +352,9 @@ else:
 st.caption(f"Today's P/L (approx): ${todays_pl:.2f}")
 
 st.divider()
+render_expectancy_panel(df, settinngs)
+
+st.divider()
 with st.expander("📈 Expectancy Roadmap (playbook-aligned)", expanded=True):
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     start_equity = c1.number_input("Start equity ($)",  min_value=50.0, value=float(settings.get("account_size", 500.0)), step=50.0)
