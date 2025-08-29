@@ -284,15 +284,8 @@ with st.form("trade_submit_form", clear_on_submit=False):
         base_df = tl_df if not tl_df.empty else pd.DataFrame(columns=expected_columns())
 
         new_df = append_trade_row(
-            base_df,
-            time_str=time_str,
-            symbol=sym,
-            side=side,
-            strike=strike,
-            qty=qty,
-            entry=entry_val,
-            exitp=exitp_val,
-            notes=notes_val,
+            time_str=time_str, symbol=sym, side=side, strike=strike, qty=qty,
+            entry=entry, exitp=exitp, notes=notes
         )
         save_trades(df)
         st.success("Trade added to log.")
@@ -345,7 +338,7 @@ if not tl_df.empty:
         )
 
     if del_btn and to_delete_ids:
-        new_df = delete_by_ids(ids)
+        new_df = delete_by_ids(to_delete_ids)
         st.success(f"Deleted {len(to_delete_ids)} trade(s).")
         st.rerun()
 else:
