@@ -20,15 +20,15 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import plotly.graph_objs as go
 from zoneinfo import ZoneInfo
+import streamlit as st
 
 st.set_page_config(page_title="0DTE Cockpit — SPY & QQQ", layout="wide")
 
 # ====== Config ======
 TAAPI_URL = "https://api.taapi.io/bulk"
-TAAPI_SECRET = os.getenv("TAAPI_SECRET")
-if not TAAPI_SECRET:
-    st.error("Missing TAAPI_SECRET env var. On Windows PowerShell:\n  setx TAAPI_SECRET \"your_taapi_key_here\"\nClose & reopen terminal after setting.")
-    st.stop()
+
+
+TAAPI_KEY = st.secrets.get("TAAPI_KEY")
 
 INTERVAL = "1m"
 DEFAULT_REFRESH_SECS = 5
