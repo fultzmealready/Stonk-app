@@ -157,18 +157,19 @@ with colC2:
 # ====== Guardrails: load log, compute today's P/L, set thresholds ======
 # Requires: TRADE_LOG constant and 'settings' dict already set.
 
-# Safe defaults so NameError can never happen
-guardrails_hit = False
-todays_pl = 0.0
-up_guard = float("nan")
-down_guard = float("nan")
+# make sure flag exists across reruns
+if "guardrails_hit" not in st.session_state:
+    st.session_state.guardrails_hit = False
 
-# Load log and compute today's P/L
+# Load log + compute today's P/L
 tl_df = load_trade_log(TRADE_LOG)
 todays_pl = compute_daily_pl(tl_df)
 
 # Account size from sidebar settings
 acct_size = float(settings.get("acct", 0.0))
+
+# Defaults for display
+up_guard = float("nan"); down_guard = float("nan")
 
 # Only enforce guardrails if account size is set
 if acct_size > 0:
@@ -176,18 +177,18 @@ if acct_size > 0:
     down_guard = -0.20 * acct_size    # -20%
     breach_up   = todays_pl >= up_guard
     breach_down = todays_pl <= down_guard
-    guardrails_hit = breach_up or breach_down
+    st.session_state.guardrails_hit = bool(breach_up or breach_down)
 
-    if guardrails_hit:
+    if st.session_state.guardrails_hit:
         st.error("🛑 STOP TRADING — Daily guardrail hit "
                  + ("(+30% target reached)" if breach_up else "(−20% loss limit)"))
 else:
+    # don’t trip guardrails without an account size; just inform
     st.info("Set your Account size in the sidebar to enable daily guardrails.")
 
 # ====== Trade Logger ======
 st.subheader("Trade Logger")
-
-disable_form = guardrails_hit
+disable_form = st.session_state.guardrails_hit
 
 with st.form("trade_log_form", clear_on_submit=False):
     col1, col2, col3, col4 = st.columns([1,1,1,1])
