@@ -80,7 +80,7 @@ def compute_vwap_from_df(
     cum_vol   = vol.groupby(day).cumsum()
     vwap = cum_tpvol / cum_vol
     return vwap
-2) Use it in your chart code
+
 def first5_momentum(df):
     if df is None or df.empty: return None
     df5 = df.resample("5min").agg({"Open":"first","High":"max","Low":"min","Close":"last","Volume":"sum"})
