@@ -287,7 +287,7 @@ with st.form("trade_submit_form", clear_on_submit=False):
             entry=entry,
             exitp=exitp,
             notes=notes,
-            p_l_pct=pl_pct,
+            pl_pct=pl_pct,
         )
         st.success("Trade added to Google Sheet.")
         st.rerun()
