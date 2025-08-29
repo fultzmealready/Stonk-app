@@ -48,9 +48,8 @@ def plot_with_orb_em(ticker: str, df: pd.DataFrame, orb_minutes: int = 15):
     ))
 
     # VWAP
-    vwap_series = compute_vwap_from_df(df)
+    vwap_series = compute_vwap_from_df(df, reset="daily", rth_only=False)  # or rth_only=True
     fig.add_trace(go.Scatter(x=df.index, y=vwap_series, mode="lines", name="VWAP"))
-
     # ORB
     s, e, orh, orl = compute_opening_range(df, minutes=orb_minutes)
     if s is not None and e is not None and not (math.isnan(orh) or math.isnan(orl)):
