@@ -294,16 +294,16 @@ with st.form("trade_submit_form", clear_on_submit=False):
 
 
 # ====== P/L + table + download ======
-tl_df = load_trades()
+df = load_trades("Streamlit.app")
 
 st.caption(f"Today's P/L (approx): ${todays_pl:.2f}")
 
-if not tl_df.empty:
+if not df.empty:
     # make sure we have IDs
-    tl_df = ensure_id_column(tl_df)
+    df = ensure_id_column(df)
 
     # show last N (or all) with a checkbox column for delete
-    view = tl_df.sort_values("time").tail(100).copy()  # adjust window if you like
+    view = df.sort_values("time").tail(100).copy()  # adjust window if you like
     view.insert(0, "__delete__", False)
 
     edited = st.data_editor(
