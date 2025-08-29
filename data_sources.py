@@ -2,17 +2,24 @@ import math
 import pandas as pd
 import yfinance as yf
 
-def get_intraday_1m_yf(ticker, period="2d"):  # keep 2d for buffer
+def get_intraday_1m_yf(ticker: str, period: str = "2d", include_ext_hours: bool = True) -> pd.DataFrame:
     try:
         df = yf.download(
-            ticker, period=period, interval="1m", auto_adjust=False, progress=False, prepost=True
+            ticker,
+            period=period,
+            interval="1m",
+            auto_adjust=False,
+            progress=False,
+            prepost=include_ext_hours,   # <— extended hours (pre/post)
         )
-        if df.empty: return pd.DataFrame()
+        if df is None or df.empty:
+            return pd.DataFrame()
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = [c[0] for c in df.columns]
         return df.rename(columns=str.title).dropna()
     except Exception:
         return pd.DataFrame()
+
 
 def sector_breadth_yf(tickers):
     try:
