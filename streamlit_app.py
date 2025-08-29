@@ -14,7 +14,7 @@ from indicators import (
 from plotting import plot_with_orb_em
 from trade_log import (
     load_trade_log, save_trade_log, expected_columns, delete_and_save, ensure_id_column, 
-    compute_daily_pl, compute_levels
+    compute_daily_pl, compute_levels, append_trade
 )
 from discipline import render_discipline_panel
 
