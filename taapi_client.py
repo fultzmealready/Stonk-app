@@ -116,6 +116,7 @@ def get_taapi_candles(symbol, interval="1m", limit=300, timeout_sec=45):
             return pd.DataFrame()
         df = pd.DataFrame(records, columns=["Datetime","Open","High","Low","Close","Volume"])\
                .set_index("Datetime").sort_index()
+        df = df.tz_localize("UTC").tz_convert("America/New_York")
         return df
     except Exception:
         return pd.DataFrame()
