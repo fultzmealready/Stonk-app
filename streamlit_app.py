@@ -17,6 +17,8 @@ from trade_log import load_trade_log, save_trade_log, append_trade, compute_leve
 from guardrails import check_daily_limits
 from components.sidebar import render_sidebar
 
+from expectancy import render_expectancy_panel, suggest_target_badge
+
 st.set_page_config(page_title="0DTE Cockpit — SPY & QQQ", layout="wide")
 
 # ====== Constants ======
@@ -218,6 +220,10 @@ with st.form("trade_log_form", clear_on_submit=False):
     cB.metric("+120% raw",    f"${tgt120:.2f}" if tgt120 == tgt120 else "—")
     cC.metric("−30% stop",    f"${stop30:.2f}" if stop30 == stop30 else "—")
 
+    # Suggested target badge
+    badge_label, badge_help = suggest_target_badge(win_rate_assumption=0.45)
+    st.info(f"{badge_label} — {badge_help}")
+
     submitted = st.form_submit_button("Add trade", disabled=disable_form)
 
     if submitted:
@@ -249,6 +255,9 @@ if not tl_df.empty:
     )
 else:
     st.caption("No trades logged yet.")
+
+st.divider()
+render_expectancy_panel(tl_df, settings)
 
 # ====== Auto-refresh ======
 stop_now = st.session_state.guardrails_hit  # pause refresh if guardrails tripped
