@@ -11,7 +11,7 @@ def render_sidebar(default_refresh_secs: int = 5) -> dict:
         st.caption("Risk / Budget")
         acct = st.number_input("Account size ($)", min_value=50.0, value=100.0, step=50.0, key="acct_size")
         risk_pct = st.slider("Risk per trade (%)", 1, 100, 25, step=1, key="risk_pct")
-        default_contracts = (acct / risk_pct) if risk_pct else 20
+        default_contracts = (acct * risk_pct) if risk_pct else 20
         est_cost = st.number_input("Est. option cost ($/contract)", min_value=1.0, value=default_contracts, step=1.0, key="est_cost")
         max_risk = acct * (risk_pct/100.0)
         max_contracts = max(1, int(max_risk // est_cost)) if est_cost > 0 else 1
