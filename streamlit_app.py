@@ -17,12 +17,7 @@ from indicators import (
     get_value_by_id, choose_strike, round_magnets
 )
 from plotting import plot_with_orb_em
-from trade_log import (
-    expected_columns, ensure_id_column, 
-    compute_daily_pl, compute_levels,
-    load_trade_log, save_trade_log,
-    delete_and_save, append_trade,
-)
+from trade_log import compute_levels, compute_daily_pl, expected_columns
 from sheets_store import load_trades, save_trades, append_trade_row, delete_by_ids, _open_sheet
 from discipline import render_discipline_panel
 from guardrails import check_daily_limits
