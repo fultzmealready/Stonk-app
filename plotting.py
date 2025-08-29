@@ -35,7 +35,7 @@ def _last_eod_8pm(ts_max: pd.Timestamp) -> pd.Timestamp:
         return day_8pm
     return (ts_max.normalize() - pd.Timedelta(days=1)) + pd.Timedelta(hours=20)
 
-def plot_with_orb_em(ticker: str, df: pd.DataFrame, orb_minutes: int = 15):
+def plot_with_orb_em(ticker: str, df: pd.DataFrame, orb_minutes: int = 15, hours_shown: int = 6):
     # --- ensure ET first ---
     df = _ensure_et(df)
 
