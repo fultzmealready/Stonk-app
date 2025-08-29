@@ -1,6 +1,8 @@
 from __future__ import annotations
 import os, datetime as dt
 import pandas as pd
+import uuid
+import numpy as np
 import streamlit as st
 
 DEFAULT_LOG = "0dte_trade_log.csv"
