@@ -12,7 +12,7 @@ from indicators import (
     get_value_by_id, choose_strike, round_magnets
 )
 from plotting import plot_with_orb_em
-from trade_log import load_trade_log, save_trade_log, append_trade, compute_levels, compute_daily_pl, expected_columns
+from trade_log import load_trade_log, save_trade_log, expected_columns, delete_and_save, ensure_id_column
 from discipline import render_discipline_panel
 
 from guardrails import check_daily_limits
@@ -277,16 +277,53 @@ with st.form("trade_submit_form", clear_on_submit=False):
 
 
 # ====== P/L + table + download ======
+tl_df = load_trade_log(TRADE_LOG)
+
 st.caption(f"Today's P/L (approx): ${todays_pl:.2f}")
+
 if not tl_df.empty:
-    show_cols = [c for c in tl_df.columns if c in expected_columns()]
-    st.dataframe(tl_df.tail(20)[show_cols], use_container_width=True, hide_index=True)
-    st.download_button(
-        "Download full trade log (CSV)",
-        data=tl_df.to_csv(index=False).encode("utf-8"),
-        file_name="0dte_trade_log.csv",
-        mime="text/csv"
+    # make sure we have IDs
+    tl_df = ensure_id_column(tl_df)
+
+    # show last N (or all) with a checkbox column for delete
+    view = tl_df.sort_values("time").tail(100).copy()  # adjust window if you like
+    view.insert(0, "__delete__", False)
+
+    edited = st.data_editor(
+        view,
+        hide_index=True,
+        use_container_width=True,
+        column_config={
+            "__delete__": st.column_config.CheckboxColumn("Delete?", help="Check rows to delete"),
+            "id": st.column_config.TextColumn("ID", help="Internal row id", disabled=True),
+        },
+        disabled=False,
+        num_rows="fixed",
     )
+
+    # gather the IDs the user checked
+    to_delete_ids = edited.loc[edited["__delete__"] == True, "id"].astype(str).tolist()
+
+    col_del, col_dl_all = st.columns([1,1])
+    with col_del:
+        del_btn = st.button(
+            f"Delete selected ({len(to_delete_ids)})",
+            type="primary",
+            disabled=(len(to_delete_ids) == 0),
+            help="Remove the checked rows from the trade log",
+        )
+    with col_dl_all:
+        st.download_button(
+            "Download full trade log (CSV)",
+            data=tl_df.to_csv(index=False).encode("utf-8"),
+            file_name="0dte_trade_log.csv",
+            mime="text/csv",
+        )
+
+    if del_btn and to_delete_ids:
+        new_df = delete_and_save(to_delete_ids, TRADE_LOG)
+        st.success(f"Deleted {len(to_delete_ids)} trade(s).")
+        st.rerun()
 else:
     st.caption("No trades logged yet.")
 
