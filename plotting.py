@@ -49,15 +49,20 @@ def plot_with_orb_em(ticker: str, df: pd.DataFrame, orb_minutes: int = 15):
 
     # --- VWAP (daily-reset, bridge ext-hours gaps) ---
     vwap_series = compute_vwap_from_df(df, reset="daily", rth_only=False)
-
     if isinstance(vwap_series, pd.Series) and not vwap_series.empty:
-    # forward-fill within each ET day so the line shows in pre/post even with 0 volume
-        try:
-            vwap_series = vwap_series.groupby(vwap_series.index.date).ffill()
-        except Exception:
-        # index may not be tz-aware or groupby could fail: just do a plain ffill
-            vwap_series = vwap_series.ffill()
+    # per-day ffill to handle zero-volume NaNs
+    vwap_series = vwap_series.groupby(vwap_series.index.date).ffill()
 
+    # build a complete 1-minute index from first to last stamp
+    full_idx = pd.date_range(vwap_series.index.min(), vwap_series.index.max(), freq="1min", tz=vwap_series.index.tz)
+    vwap_series = vwap_series.reindex(full_idx).ffill()
+
+    fig.add_trace(go.Scatter(
+        x=vwap_series.index,
+        y=vwap_series,
+        mode="lines",
+        name="VWAP"
+    ))
         fig.add_trace(
             go.Scatter(x=df.index, y=vwap_series, mode="lines", name="VWAP")
         )
