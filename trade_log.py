@@ -1,7 +1,8 @@
 import os
-import datetime as dt
-import pandas as pd
+import requests
 import streamlit as st
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 DEFAULT_LOG = "0dte_trade_log.csv"
 
