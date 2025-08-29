@@ -256,6 +256,7 @@ else:
 
 
 # ====== Auto-refresh ======
+stop_now = guardrails_hit 
 if settings["enable_refresh"] and not stop_now:
     time.sleep(settings["refresh_secs"])
     st.rerun()
