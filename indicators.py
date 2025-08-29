@@ -1,3 +1,7 @@
+import math
+import numpy as np
+import pandas as pd
+
 def first_numeric(d):
     if isinstance(d, dict):
         for k in ("value","valueMACD","valueMACDSignal","valueMACDHist"):
