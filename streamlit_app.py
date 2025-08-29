@@ -191,22 +191,11 @@ else:
 
 # ====== Trade Logger ======
 st.subheader("Trade Logger")
-disable_form = st.session_state.guardrails_hit
 
-with st.form("trade_log_form", clear_on_submit=False):
-    col1, col2, col3, col4 = st.columns([1,1,1,1])
-    with col1:
-        sym = st.selectbox("Symbol", ["SPY","QQQ"], index=0, disabled=disable_form)
-    with col2:
-        side = st.selectbox("Direction", ["CALL","PUT"], index=0, disabled=disable_form)
-    with col3:
-        base_last = spy_last if sym == "SPY" else qqq_last
-        strike_default = float("nan") if (base_last is None or math.isnan(base_last)) else float(round(base_last))
-        strike = st.number_input("Strike", min_value=0.0, value=strike_default, step=1.0, disabled=disable_form)
-    with col4:
-        qty = st.number_input("Qty (contracts)", min_value=1, value=1, step=1, disabled=disable_form)
+# Disable everything if guardrails tripped
+disable_form = st.session_state.guardrails_hit if "guardrails_hit" in st.session_state else False
 
-   # --- LIVE inputs (outside the form) so metrics update instantly ---
+# --- LIVE inputs (outside any form -> recompute every keystroke) ---
 col5, col6, col7 = st.columns([1, 1, 2])
 with col5:
     entry = st.number_input(
@@ -223,69 +212,69 @@ with col7:
         "Notes", value="", key="notes_live", disabled=disable_form
     )
 
-# Live preview of targets/stop (recomputes on every change)
+# Live preview of targets/stop
 tgt100, tgt120, stop30 = compute_levels(entry if entry > 0 else float("nan"))
 cA, cB, cC = st.columns(3)
 cA.metric("+100% target", f"${tgt100:.2f}" if tgt100 == tgt100 else "—")
 cB.metric("+120% raw",    f"${tgt120:.2f}" if tgt120 == tgt120 else "—")
 cC.metric("−30% stop",    f"${stop30:.2f}" if stop30 == stop30 else "—")
 
-# (keep your Symbol / Direction / Strike / Qty inputs inside the form)
-with st.form("trade_log_form", clear_on_submit=False):
-    col1, col2, col3, col4 = st.columns([1,1,1,1])
-    with col1:
-        sym = st.selectbox("Symbol", ["SPY","QQQ"], index=0, disabled=disable_form)
-    with col2:
-        side = st.selectbox("Direction", ["CALL","PUT"], index=0, disabled=disable_form)
-    with col3:
-        base_last = spy_last if sym == "SPY" else qqq_last
-        strike_default = float("nan") if (base_last is None or math.isnan(base_last)) else float(round(base_last))
-        strike = st.number_input("Strike", min_value=0.0, value=strike_default, step=1.0, disabled=disable_form)
-    with col4:
-        qty = st.number_input("Qty (contracts)", min_value=1, value=1, step=1, disabled=disable_form)
-
-    submitted = st.form_submit_button("Add trade", disabled=disable_form)
-
-    if submitted:
-        # read the live fields from session_state
-        entry = float(st.session_state.get("entry_live", 0.0))
-        exitp = float(st.session_state.get("exit_live", 0.0))
-        notes = st.session_state.get("notes_live", "")
-
-        time_str = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
-        base_df = tl_df if not tl_df.empty else pd.DataFrame(columns=expected_columns())
-        new_df = append_trade(
-            base_df,
-            time_str=time_str, symbol=sym, side=side, strike=strike, qty=qty,
-            entry=entry, exitp=exitp, notes=notes
-        )
-        save_trade_log(new_df, TRADE_LOG)
-        st.success("Trade added to log.")
-        st.toast(f"Targets: +100% ${tgt100:.2f}, +120% ${tgt120:.2f} • Stop: ${stop30:.2f}", icon="🎯")
-        st.rerun()
-
-
-    # Suggested target badge
+# (Optional) Suggested target badge from expectancy.py
+try:
+    from expectancy import suggest_target_badge
     badge_label, badge_help = suggest_target_badge(win_rate_assumption=0.45)
     st.info(f"{badge_label} — {badge_help}")
+except Exception:
+    pass
+
+# --- Submit form (unique key) ---
+with st.form("trade_submit_form", clear_on_submit=False):
+    col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
+
+    with col1:
+        sym = st.selectbox("Symbol", ["SPY", "QQQ"], index=0, key="trade_symbol", disabled=disable_form)
+
+    with col2:
+        side = st.selectbox("Direction", ["CALL", "PUT"], index=0, key="trade_side", disabled=disable_form)
+
+    with col3:
+        # default strike near the currently selected underlying's last
+        base_last = spy_last if sym == "SPY" else qqq_last
+        strike_default = float("nan") if (base_last is None or math.isnan(base_last)) else float(round(base_last))
+        strike = st.number_input("Strike", min_value=0.0, value=strike_default, step=1.0,
+                                 key="trade_strike", disabled=disable_form)
+
+    with col4:
+        qty = st.number_input("Qty (contracts)", min_value=1, value=1, step=1,
+                              key="trade_qty", disabled=disable_form)
 
     submitted = st.form_submit_button("Add trade", disabled=disable_form)
 
     if submitted:
+        # Pull the latest live values from session_state
+        entry_val = float(st.session_state.get("entry_live", 0.0))
+        exitp_val = float(st.session_state.get("exit_live", 0.0))
+        notes_val = st.session_state.get("notes_live", "")
+
         time_str = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
         base_df = tl_df if not tl_df.empty else pd.DataFrame(columns=expected_columns())
+
         new_df = append_trade(
             base_df,
-            time_str=time_str, symbol=sym, side=side, strike=strike, qty=qty,
-            entry=entry, exitp=exitp, notes=notes
+            time_str=time_str,
+            symbol=sym,
+            side=side,
+            strike=strike,
+            qty=qty,
+            entry=entry_val,
+            exitp=exitp_val,
+            notes=notes_val,
         )
         save_trade_log(new_df, TRADE_LOG)
         st.success("Trade added to log.")
         st.toast(f"Targets: +100% ${tgt100:.2f}, +120% ${tgt120:.2f} • Stop: ${stop30:.2f}", icon="🎯")
-        st.toast(f"Daily guardrails: STOP TRADING if P/L ≥ ${up_guard:.0f} or ≤ ${down_guard:.0f}", icon="⚠️")
-
-        # Refresh and rerun so table/metrics update consistently
         st.rerun()
+
 
 # ====== P/L + table + download ======
 st.caption(f"Today's P/L (approx): ${todays_pl:.2f}")
