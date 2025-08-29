@@ -276,7 +276,7 @@ with st.form("trade_submit_form", clear_on_submit=False):
     submitted = st.form_submit_button("Add trade", disabled=disable_form)
 
     if submitted:
-        pl_pct = ((exitp - entry) / entry * 100.0) if entry > 0 and exitp > 0 else float("nan")
+        p_l_pct = ((exitp - entry) / entry * 100.0) if entry > 0 and exitp > 0 else float("nan")
         # append directly to Google Sheet
         append_trade_row(
             time_str=pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -287,7 +287,7 @@ with st.form("trade_submit_form", clear_on_submit=False):
             entry=entry,
             exitp=exitp,
             notes=notes,
-            pl_pct=pl_pct,
+            p_l_pct=pl_pct,
         )
         st.success("Trade added to Google Sheet.")
         st.rerun()
