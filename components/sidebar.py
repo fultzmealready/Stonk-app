@@ -16,6 +16,12 @@ def render_sidebar(default_refresh_secs: int = 5) -> dict:
         max_contracts = max(1, int(max_risk // est_cost)) if est_cost > 0 else 1
         st.metric("Max risk / contracts", f"${max_risk:.0f}", f"{max_contracts}x")
         st.caption("Default exit: +50–100% target / −50% stop.")
+        default_risk = st.session_state.get("next_session_risk_pct", 25.0) or 25.0
+        risk_pct = st.slider("Risk per trade (%)", 1, 50, int(default_risk), step=1)
+        # if we consumed the override, clear it so it only applies once
+        if "next_session_risk_pct" in st.session_state and st.session_state.next_session_risk_pct:
+        # apply only on first render of the new session; you can add date logic if desired
+        st.session_state.next_session_risk_pct = None
         st.divider()
         daily_limit = st.number_input("Max daily loss ($)", min_value=0.0, value=100.0, step=10.0, key="daily_limit")
     return {
