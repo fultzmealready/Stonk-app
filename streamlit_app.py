@@ -251,7 +251,7 @@ else:
     st.caption("No trades logged yet.")
 
 # ====== Auto-refresh ======
-stop_now = guardrails_hit  # pause refresh if guardrails tripped
+stop_now = st.session_state.guardrails_hit  # pause refresh if guardrails tripped
 if settings["enable_refresh"] and not stop_now:
     time.sleep(settings["refresh_secs"])
     st.rerun()
