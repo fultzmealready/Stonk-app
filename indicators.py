@@ -21,10 +21,6 @@ def get_value_by_id(results: dict, id_contains: str, default=float("nan")):
                 return float(num)
     return default
 
-# indicators.py
-import numpy as np
-import pandas as pd
-
 def compute_vwap_from_df(
     df: pd.DataFrame,
     *,
