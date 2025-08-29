@@ -12,10 +12,8 @@ from indicators import (
     get_value_by_id, choose_strike, round_magnets
 )
 from plotting import plot_with_orb_em
-from trade_log import (
-    get_log_path, load_trade_log, save_trade_log, render_trade_form,
-    render_trade_log, compute_daily_pl
-)
+from trade_log import load_trade_log, save_trade_log, append_trade, compute_levels, compute_daily_pl, expected_columns
+
 from guardrails import check_daily_limits
 from components.sidebar import render_sidebar
 
