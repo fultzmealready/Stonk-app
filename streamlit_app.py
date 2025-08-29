@@ -206,20 +206,64 @@ with st.form("trade_log_form", clear_on_submit=False):
     with col4:
         qty = st.number_input("Qty (contracts)", min_value=1, value=1, step=1, disabled=disable_form)
 
-    col5, col6, col7 = st.columns([1,1,2])
-    with col5:
-        entry = st.number_input("Entry ($/contract)", min_value=0.0, value=20.0, step=0.5, disabled=disable_form)
-    with col6:
-        exitp = st.number_input("Exit ($/contract)", min_value=0.0, value=0.0, step=0.5, disabled=disable_form)
-    with col7:
-        notes = st.text_input("Notes", value="", disabled=disable_form)
+   # --- LIVE inputs (outside the form) so metrics update instantly ---
+col5, col6, col7 = st.columns([1, 1, 2])
+with col5:
+    entry = st.number_input(
+        "Entry ($/contract)", min_value=0.0, value=20.0, step=0.5,
+        key="entry_live", disabled=disable_form
+    )
+with col6:
+    exitp = st.number_input(
+        "Exit ($/contract)", min_value=0.0, value=0.0, step=0.5,
+        key="exit_live", disabled=disable_form
+    )
+with col7:
+    notes = st.text_input(
+        "Notes", value="", key="notes_live", disabled=disable_form
+    )
 
-    # Live preview of targets/stop
-    tgt100, tgt120, stop30 = compute_levels(entry if entry > 0 else float("nan"))
-    cA, cB, cC = st.columns(3)
-    cA.metric("+100% target", f"${tgt100:.2f}" if tgt100 == tgt100 else "—")
-    cB.metric("+120% raw",    f"${tgt120:.2f}" if tgt120 == tgt120 else "—")
-    cC.metric("−30% stop",    f"${stop30:.2f}" if stop30 == stop30 else "—")
+# Live preview of targets/stop (recomputes on every change)
+tgt100, tgt120, stop30 = compute_levels(entry if entry > 0 else float("nan"))
+cA, cB, cC = st.columns(3)
+cA.metric("+100% target", f"${tgt100:.2f}" if tgt100 == tgt100 else "—")
+cB.metric("+120% raw",    f"${tgt120:.2f}" if tgt120 == tgt120 else "—")
+cC.metric("−30% stop",    f"${stop30:.2f}" if stop30 == stop30 else "—")
+
+# (keep your Symbol / Direction / Strike / Qty inputs inside the form)
+with st.form("trade_log_form", clear_on_submit=False):
+    col1, col2, col3, col4 = st.columns([1,1,1,1])
+    with col1:
+        sym = st.selectbox("Symbol", ["SPY","QQQ"], index=0, disabled=disable_form)
+    with col2:
+        side = st.selectbox("Direction", ["CALL","PUT"], index=0, disabled=disable_form)
+    with col3:
+        base_last = spy_last if sym == "SPY" else qqq_last
+        strike_default = float("nan") if (base_last is None or math.isnan(base_last)) else float(round(base_last))
+        strike = st.number_input("Strike", min_value=0.0, value=strike_default, step=1.0, disabled=disable_form)
+    with col4:
+        qty = st.number_input("Qty (contracts)", min_value=1, value=1, step=1, disabled=disable_form)
+
+    submitted = st.form_submit_button("Add trade", disabled=disable_form)
+
+    if submitted:
+        # read the live fields from session_state
+        entry = float(st.session_state.get("entry_live", 0.0))
+        exitp = float(st.session_state.get("exit_live", 0.0))
+        notes = st.session_state.get("notes_live", "")
+
+        time_str = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
+        base_df = tl_df if not tl_df.empty else pd.DataFrame(columns=expected_columns())
+        new_df = append_trade(
+            base_df,
+            time_str=time_str, symbol=sym, side=side, strike=strike, qty=qty,
+            entry=entry, exitp=exitp, notes=notes
+        )
+        save_trade_log(new_df, TRADE_LOG)
+        st.success("Trade added to log.")
+        st.toast(f"Targets: +100% ${tgt100:.2f}, +120% ${tgt120:.2f} • Stop: ${stop30:.2f}", icon="🎯")
+        st.rerun()
+
 
     # Suggested target badge
     badge_label, badge_help = suggest_target_badge(win_rate_assumption=0.45)
