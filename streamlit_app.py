@@ -36,6 +36,8 @@ CORE_INDIS = [
     {"indicator": "supertrend"},
     {"indicator": "stochrsi"},
 ]
+TRADE_LOG = "0dte_trade_log.csv"
+ET = ZoneInfo("America/New_York")
 
 # ====== Sidebar & settings ======
 settings = render_sidebar(DEFAULT_REFRESH_SECS)
@@ -153,25 +155,15 @@ with colC2:
     else: st.plotly_chart(plot_with_orb_em("QQQ", qqq_df, orb_minutes=ORB_MINUTES), use_container_width=True, key="qqq_chart")
 
 # ====== Guardrails: load log, compute today's P/L, set thresholds ======
-from trade_log import (
-    load_trade_log, save_trade_log, append_trade,
-    compute_levels, compute_daily_pl, expected_columns
-)
-
-# Load existing log
 tl_df = load_trade_log(TRADE_LOG)
 
 # Today's P/L in $
 todays_pl = compute_daily_pl(tl_df)
 
-# Account size from sidebar (fallback if needed)
-acct_size = float(st.session_state.get("acct_size", 0.0))
-try:
-    acct_size = float(acct)  # prefer the local variable if it exists
-except Exception:
-    pass
+# Account size from sidebar settings
+acct_size = float(settings.get("acct", 0.0))
 
-# Thresholds (+30% / -20%)
+# Thresholds (+30% / −20%)
 up_guard   = 0.30 * acct_size if acct_size > 0 else float("inf")
 down_guard = -0.20 * acct_size if acct_size > 0 else float("-inf")
 
@@ -239,11 +231,18 @@ with st.form("trade_log_form", clear_on_submit=False):
         st.toast(f"Daily guardrails: STOP TRADING if P/L ≥ ${up_guard:.0f} or ≤ ${down_guard:.0f}", icon="⚠️")
         st.rerun()
 
+        save_trade_log(new_df, TRADE_LOG)
+        st.success("Trade added to log.")
+        st.toast(f"Targets: +100% ${tgt100:.2f}, +120% ${tgt120:.2f} • Stop: ${stop30:.2f}", icon="🎯")
+        st.toast(f"Daily guardrails: STOP TRADING if P/L ≥ ${up_guard:.0f} or ≤ ${down_guard:.0f}", icon="⚠️")
+
+        # refresh local copies
+        tl_df = new_df
+        todays_pl = compute_daily_pl(tl_df)
+        st.rerun()
+
 
 # Load existing log and compute today's P/L
-tl_df = load_trade_log(TRADE_LOG)
-todays_pl = compute_daily_pl(tl_df)
-
 st.caption(f"Today's P/L (approx): ${todays_pl:.2f}")
 if not tl_df.empty:
     show_cols = [c for c in tl_df.columns if c in expected_columns()]
