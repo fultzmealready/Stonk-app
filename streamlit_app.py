@@ -9,10 +9,6 @@
 # - Max daily loss guardrail
 # - Single chart section (VWAP + ORB + EM band)
 # - Trade logger & CSV
-#
-# ENV (Streamlit Cloud secrets):
-#   TAAPI_SECRET="your_taapi_key_here"
-#   (optional) TAAPI_URL="https://api.taapi.io/bulk"
 
 import os, time, math, datetime as dt
 import numpy as np, pandas as pd
@@ -26,20 +22,17 @@ st.set_page_config(page_title="0DTE Cockpit — SPY & QQQ", layout="wide")
 
 # ====== Secrets & Config ======
 def _get_secret(name, default=""):
-    # flat key
     if name in st.secrets:
         return st.secrets.get(name, default)
-    # nested block support, e.g. [taapi] secret="..."
     if "taapi" in st.secrets and isinstance(st.secrets["taapi"], dict):
         low = name.lower()
         if low in st.secrets["taapi"]:
             return st.secrets["taapi"][low]
-    # env fallback (local dev)
     return os.getenv(name, default)
 
 TAAPI_SECRET = _get_secret("TAAPI_SECRET")
 if not TAAPI_SECRET:
-    st.error("Missing **TAAPI_SECRET**. Add it in your app’s *Settings → Secrets* (or env var) and rerun.")
+    st.error("Missing TAAPI_SECRET. Add it in Settings → Secrets (or env var) and rerun.")
     st.stop()
 
 TAAPI_URL = _get_secret("TAAPI_URL", "https://api.taapi.io/bulk")
@@ -78,13 +71,18 @@ def make_session():
 
 SESSION = make_session()
 
-# ====== TAAPI helpers (STOCKS/ETFs: no exchange prefix) ======
+# ====== TAAPI helpers (STOCKS/ETFs construct object) ======
 def make_stock_construct(symbol: str, interval: str, indicators: list[dict]) -> dict:
     """
-    TAAPI 'stocks' style construct: use SYMBOL:INTERVAL (no exchange).
-    Example: 'SPY:1m'
+    TAAPI bulk 'construct' for stocks requires:
+      { "type":"stocks", "symbol":"SPY", "interval":"1m", "indicators":[...] }
     """
-    return {"construct": f"{symbol.upper()}:{interval}", "indicators": indicators}
+    return {
+        "type": "stocks",
+        "symbol": symbol.upper(),
+        "interval": interval,
+        "indicators": indicators,
+    }
 
 def taapi_bulk(constructs, timeout_sec=45):
     """POST /bulk with one or more constructs. Return a dict[id -> result]."""
@@ -94,16 +92,13 @@ def taapi_bulk(constructs, timeout_sec=45):
         r.raise_for_status()
         j = r.json()
         data = j.get("data", [])
-        # Map TAAPI items by their 'id' so we can fuzzy-match later
         out = {}
         for it in data:
             _id = it.get("id")
             res = it.get("result", {})
             if _id:
                 out[_id] = res
-        # if TAAPI returned a different shape, at least return something debuggable
         if not out and isinstance(j, dict):
-            # fallback: map whole response
             out["__raw__"] = j
         return out
     except requests.exceptions.HTTPError as e:
@@ -112,7 +107,7 @@ def taapi_bulk(constructs, timeout_sec=45):
             body = r.text[:800]
         except Exception:
             pass
-        st.error(f"TAAPI bulk call failed: HTTP {getattr(r,'status_code', '???')} — {e}\n\nResponse: `{body}`")
+        st.error(f"TAAPI bulk call failed: HTTP {getattr(r,'status_code','?')} — {e}\n\nResponse: `{body}`")
         return {}
     except requests.exceptions.RequestException as e:
         st.error(f"Network/timeout error calling TAAPI: {e}")
@@ -124,10 +119,10 @@ def taapi_bulk(constructs, timeout_sec=45):
 def get_taapi_candles(symbol, interval="1m", limit=300, timeout_sec=45):
     """Fetch OHLCV candles via TAAPI 'candles' indicator for STOCKS/ETFs."""
     try:
-        construct = {
-            "construct": f"{symbol.upper()}:{interval}",
-            "indicators": [{"indicator": "candles", "backtrack": int(limit)}],
-        }
+        construct = make_stock_construct(
+            symbol, interval,
+            [{"indicator": "candles", "backtrack": int(limit)}],
+        )
         payload = {"secret": TAAPI_SECRET, "construct": construct}
         r = SESSION.post(TAAPI_URL, json=payload, timeout=(5, timeout_sec))
         r.raise_for_status()
@@ -149,7 +144,7 @@ def get_taapi_candles(symbol, interval="1m", limit=300, timeout_sec=45):
             if ts is None or o is None or h is None or l is None or cl is None:
                 continue
             ts = int(ts)
-            idx = pd.to_datetime(ts, unit="ms" if ts > 10_000_000_000 else "s")
+            idx = pd.to_datetime(ts, unit=("ms" if ts > 10_000_000_000 else "s"))
             records.append([idx, float(o), float(h), float(l), float(cl), float(v)])
         if not records:
             return pd.DataFrame()
@@ -172,7 +167,6 @@ def first_numeric(d):
     return float("nan")
 
 def get_value_by_id(results: dict, id_contains: str, default=float("nan")):
-    # Fuzzy match TAAPI item ids
     for id_str, result in results.items():
         if id_contains in id_str:
             num = first_numeric(result)
@@ -289,7 +283,7 @@ def compute_opening_range(df, minutes=15):
     or_high = float(window["High"].max()); or_low  = float(window["Low"].min())
     return start_ts, end_ts, or_high, or_low
 
-# Confidence meter inputs from TAAPI
+# ====== Confidence helpers ======
 def taapi_confidence_bits(core: dict, prefix: str):
     rsi = get_value_by_id(core, prefix + "rsi_14_")
     macd_hist = float("nan")
@@ -341,7 +335,6 @@ def resample_5m(df):
 
 # ====== Expected Move (VIX-based) ======
 def expected_move_vix():
-    """Approximate 1-day expected move using VIX: EM ≈ SPX * (VIX/100)/sqrt(252)."""
     try:
         spx = yf.download("^GSPC", period="2d", interval="1d", progress=False)
         vix = yf.download("^VIX",  period="2d", interval="1d", progress=False)
@@ -374,15 +367,14 @@ with st.sidebar:
 st.header("0DTE Cockpit — SPY & QQQ")
 
 # ====== TAAPI indicators for confidence + core prices ======
-# Use stock constructs: "SYMBOL:INTERVAL" (no exchange)
 core = taapi_bulk([
     make_stock_construct("SPY", INTERVAL, CORE_INDIS),
     make_stock_construct("QQQ", INTERVAL, CORE_INDIS),
 ], timeout_sec=60)
 
-# For stocks, TAAPI bulk ids look like "<SYMBOL>_<INTERVAL>_<indicator>_..."
-SPY_PREFIX = f"SPY_{INTERVAL}_"
-QQQ_PREFIX = f"QQQ_{INTERVAL}_"
+# Stock bulk IDs look like: "stocks_SPY_1m_<indicator>_..."
+SPY_PREFIX = f"stocks_SPY_{INTERVAL}_"
+QQQ_PREFIX = f"stocks_QQQ_{INTERVAL}_"
 
 spy_last = get_value_by_id(core, SPY_PREFIX + "price_")
 qqq_last = get_value_by_id(core, QQQ_PREFIX + "price_")
@@ -428,16 +420,6 @@ conf_label_spy, conf_score_spy, _ = confidence_label(spy_bits, decision)
 conf_label_qqq, conf_score_qqq, _ = confidence_label(qqq_bits, decision)
 
 # ====== Candle Watch ======
-def candle_emojis(df, n=3):
-    if df is None or df.empty: return "—"
-    closes = df["Close"].tail(n).tolist(); opens = df["Open"].tail(n).tolist()
-    out = []
-    for o, c in zip(opens, closes):
-        if c > o: out.append("🟩")
-        elif c < o: out.append("🟥")
-        else: out.append("➖")
-    return " ".join(out)
-
 spy_1m_watch = candle_emojis(spy_df, n=3); qqq_1m_watch = candle_emojis(qqq_df, n=3)
 spy_5m_watch = candle_emojis(resample_5m(spy_df), n=1); qqq_5m_watch = candle_emojis(resample_5m(qqq_df), n=1)
 
@@ -474,7 +456,7 @@ if now_et < rth_open + dt.timedelta(minutes=5):
 elif now_et > rth_close - dt.timedelta(minutes=30):
     st.warning("Last 30 minutes of RTH — increased gamma pin/reversals. Manage risk tightly.")
 
-# ====== Perfect-setup Alerts (3x 1m same dir + 5m agree + VWAP/OR confirm) ======
+# ====== Perfect-setup Alerts ======
 def is_perfect(decision, conf_label, df_1m, last, vwap, or_high, or_low):
     if "WAIT" in decision or conf_label != "🔥 High": return False, ""
     dir_up = "CALL" in decision
@@ -557,10 +539,9 @@ else:
     st.caption("No trades logged yet.")
 
 # ====== Max daily loss guardrail ======
-daily_limit = st.session_state.get("daily_limit_value", None)
 st.caption(f"Today's P/L (approx): ${todays_pl:.2f}")
 
-# ====== Charts — VWAP + ORB + EM band (single section) ======
+# ====== Charts ======
 st.subheader(f"Charts — 1m with VWAP + Opening Range ({ORB_MINUTES}m) + Expected Move (SPX)")
 colC1, colC2 = st.columns(2, gap="large")
 
@@ -573,7 +554,6 @@ def plot_with_orb_em(ticker, df):
     if s is not None and e is not None and not (math.isnan(orh) or math.isnan(orl)):
         fig.add_hrect(y0=orl, y1=orh, x0=s, x1=e, opacity=0.15, line_width=0, fillcolor="LightSkyBlue")
         fig.add_hline(y=orh, line_dash="dot", opacity=0.5); fig.add_hline(y=orl, line_dash="dot", opacity=0.5)
-    # Expected move band (translate from SPX EM to % move)
     try:
         last_px = float(df["Close"].iloc[-1])
         spx_last, vix_last, em_spx = expected_move_vix()
@@ -596,8 +576,8 @@ with colC2:
 
 # ====== Auto-refresh ======
 with st.sidebar:
-    enable_refresh = st.checkbox("Enable auto-refresh", value=True, key="enable_refresh_2")
-    refresh = st.slider("Refresh every (sec)", 3, 30, DEFAULT_REFRESH_SECS, step=1, key="refresh_2")
-if enable_refresh:
-    time.sleep(refresh)
+    enable_refresh2 = st.checkbox("Enable auto-refresh", value=True, key="enable_refresh_2")
+    refresh2 = st.slider("Refresh every (sec)", 3, 30, DEFAULT_REFRESH_SECS, step=1, key="refresh_2")
+if enable_refresh2:
+    time.sleep(refresh2)
     st.rerun()
