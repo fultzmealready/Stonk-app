@@ -1,28 +1,50 @@
 import math, datetime as dt
 import plotly.graph_objs as go
 import pandas as pd
+from zoneinfo import ZoneInfo
 from indicators import compute_opening_range, compute_vwap_from_df
 
-def shade_rth(fig: go.Figure, df: pd.DataFrame, tz="America/New_York", fillcolor="LightGreen", opacity=0.10) -> None:
-    """
-    Add vertical rectangles for each day's 9:30–16:00 ET RTH window.
-    """
-    # df index should already be timezone-aware or naive UTC; for simple shading we assume index in ET or localized by data source
+ET = ZoneInfo("America/New_York")
+
+def _ensure_et(df: pd.DataFrame) -> pd.DataFrame:
+    """Make sure the index is tz-aware in ET."""
+    if df.index.tz is None:
+        # most sources are UTC; localize then convert
+        df = df.tz_localize("UTC").tz_convert(ET)
+    else:
+        df = df.tz_convert(ET)
+    return df
+
+def shade_rth(fig: go.Figure, df: pd.DataFrame,
+              fillcolor="LightGreen", opacity=0.10) -> None:
+    """Shade each day's 09:30–16:00 ET session."""
+    # df must already be ET
     for day in df.index.normalize().unique():
         rth_start = day + pd.Timedelta(hours=9, minutes=30)
-        rth_end   = day + pd.Timedelta(hours=16, minutes=0)
+        rth_end   = day + pd.Timedelta(hours=16)
         fig.add_vrect(
             x0=rth_start, x1=rth_end,
             fillcolor=fillcolor, opacity=opacity, layer="below", line_width=0,
             annotation_text="RTH", annotation_position="top left"
         )
 
+def _last_eod_8pm(ts_max: pd.Timestamp) -> pd.Timestamp:
+    """Return the most recent 20:00 ET at or before ts_max (also in ET)."""
+    day_8pm = ts_max.normalize() + pd.Timedelta(hours=20)
+    if ts_max >= day_8pm:
+        return day_8pm
+    return (ts_max.normalize() - pd.Timedelta(days=1)) + pd.Timedelta(hours=20)
+
 def plot_with_orb_em(ticker: str, df: pd.DataFrame, orb_minutes: int = 15):
+    # --- ensure ET first ---
+    df = _ensure_et(df)
+
     fig = go.Figure()
 
     # Candles
     fig.add_trace(go.Candlestick(
-        x=df.index, open=df["Open"], high=df["High"], low=df["Low"], close=df["Close"], name="Price"
+        x=df.index, open=df["Open"], high=df["High"],
+        low=df["Low"], close=df["Close"], name="Price"
     ))
 
     # VWAP
@@ -36,31 +58,28 @@ def plot_with_orb_em(ticker: str, df: pd.DataFrame, orb_minutes: int = 15):
         fig.add_hline(y=orh, line_dash="dot", opacity=0.5)
         fig.add_hline(y=orl, line_dash="dot", opacity=0.5)
 
-    # === Remove dead space: skip 00:00 → 08:00 each day ===
-    # (Matches what you see on the chart; if you later localize to ET, you can switch this to [20, 4].)
+    # RTH shading (09:30–16:00 ET)
+    shade_rth(fig, df)
+
+    # Skip dead space: hide 20:00 → 04:00 ET + weekends
     fig.update_xaxes(
         rangebreaks=[
-            dict(bounds=["sat", "mon"]),          # hide weekends
-            dict(bounds=[20, 4], pattern="hour"),  # hide midnight → 08:00 gap you observed
+            dict(bounds=["sat", "mon"]),
+            dict(bounds=[20, 4], pattern="hour"),
         ]
     )
 
-    # === EOD line at the break (midnight) ===
+    # EOD line at the break (20:00 ET)
     try:
-        # Midnight of the most recent day in the df's timezone
-        last_midnight = df.index[-1].normalize()
-        if df.index.min() <= last_midnight <= df.index.max():
-            fig.add_vline(
-                x=last_midnight,
-                line_dash="dot",
-                line_color="red",
-                annotation_text="EOD",
-                annotation_position="top"
-            )
+        eod = _last_eod_8pm(df.index.max().tz_convert(ET))
+        fig.add_vline(
+            x=eod, line_dash="dot", line_color="red",
+            annotation_text="EOD", annotation_position="top"
+        )
     except Exception:
         pass
 
-    # Tighten x range to data window to avoid right-side whitespace
+    # Tighten to data window
     fig.update_xaxes(range=[df.index.min(), df.index.max()])
 
     fig.update_layout(
