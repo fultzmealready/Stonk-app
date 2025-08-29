@@ -47,9 +47,25 @@ def plot_with_orb_em(ticker: str, df: pd.DataFrame, orb_minutes: int = 15):
         low=df["Low"], close=df["Close"], name="Price"
     ))
 
-    # VWAP
-    vwap_series = vwap_series.groupby(vwap_series.index.date).ffill()
-    fig.add_trace(go.Scatter(x=df.index, y=vwap_series, mode="lines", name="VWAP"))
+    # --- VWAP (daily-reset, bridge ext-hours gaps) ---
+    vwap_series = compute_vwap_from_df(df, reset="daily", rth_only=False)
+
+    if isinstance(vwap_series, pd.Series) and not vwap_series.empty:
+    # forward-fill within each ET day so the line shows in pre/post even with 0 volume
+        try:
+            vwap_series = vwap_series.groupby(vwap_series.index.date).ffill()
+        except Exception:
+        # index may not be tz-aware or groupby could fail: just do a plain ffill
+            vwap_series = vwap_series.ffill()
+
+        fig.add_trace(
+            go.Scatter(x=df.index, y=vwap_series, mode="lines", name="VWAP")
+        )
+    else:
+        # No VWAP available; skip or add a hidden placeholder so legend stays consistent
+        # fig.add_trace(go.Scatter(x=df.index, y=[None]*len(df), mode="lines", name="VWAP", visible="legendonly"))
+        pass
+
     
     # ORB
     s, e, orh, orl = compute_opening_range(df, minutes=orb_minutes)
