@@ -12,7 +12,7 @@ from indicators import (
     get_value_by_id, choose_strike, round_magnets
 )
 from plotting import plot_with_orb_em
-from trade_log import load_trade_log, save_trade_log, expected_columns, delete_and_save, ensure_id_column
+from trade_log import load_trade_log, save_trade_log, expected_columns, delete_and_save, ensure_id_column, compute_daily_pl
 from discipline import render_discipline_panel
 
 from guardrails import check_daily_limits
