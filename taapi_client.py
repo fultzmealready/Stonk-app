@@ -1,5 +1,5 @@
 import streamlit as st
-import requests
+import os, requests
 import pandas as pd
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
