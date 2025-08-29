@@ -152,6 +152,39 @@ with colC2:
     if qqq_df.empty: st.warning("No QQQ 1m data.")
     else: st.plotly_chart(plot_with_orb_em("QQQ", qqq_df, orb_minutes=ORB_MINUTES), use_container_width=True, key="qqq_chart")
 
+# ====== Guardrails: load log, compute today's P/L, set thresholds ======
+from trade_log import (
+    load_trade_log, save_trade_log, append_trade,
+    compute_levels, compute_daily_pl, expected_columns
+)
+
+# Load existing log
+tl_df = load_trade_log(TRADE_LOG)
+
+# Today's P/L in $
+todays_pl = compute_daily_pl(tl_df)
+
+# Account size from sidebar (fallback if needed)
+acct_size = float(st.session_state.get("acct_size", 0.0))
+try:
+    acct_size = float(acct)  # prefer the local variable if it exists
+except Exception:
+    pass
+
+# Thresholds (+30% / -20%)
+up_guard   = 0.30 * acct_size if acct_size > 0 else float("inf")
+down_guard = -0.20 * acct_size if acct_size > 0 else float("-inf")
+
+breach_up = acct_size > 0 and todays_pl >= up_guard
+breach_down = acct_size > 0 and todays_pl <= down_guard
+guardrails_hit = bool(breach_up or breach_down)
+
+# Banner if tripped
+if guardrails_hit:
+    st.error("🛑 STOP TRADING — Daily guardrail hit "
+             + ("(+30% target reached)" if breach_up else "(−20% loss limit)"))
+
+
 # ====== Trade Logger ======
 st.subheader("Trade Logger")
 
@@ -222,18 +255,6 @@ else:
     st.caption("No trades logged yet.")
 
 
-# Guardrails thresholds
-acct_size = acct
-up_guard  = 0.30 * acct_size   # +30%
-down_guard= -0.20 * acct_size  # -20%
-
-breach_up   = todays_pl >= up_guard
-breach_down = todays_pl <= down_guard
-guardrails_hit = breach_up or breach_down
-
-if guardrails_hit:
-    banner = "🟢 STOP TRADING — Daily target hit (+30%)" if breach_up else "🔴 STOP TRADING — Daily loss limit reached (−20%)"
-    st.error(banner)  # big banner
 
 # ====== Auto-refresh ======
 if settings["enable_refresh"] and not stop_now:
