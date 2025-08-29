@@ -13,6 +13,7 @@ from indicators import (
 )
 from plotting import plot_with_orb_em
 from trade_log import load_trade_log, save_trade_log, append_trade, compute_levels, compute_daily_pl, expected_columns
+from discipline import render_discipline_panel
 
 from guardrails import check_daily_limits
 from components.sidebar import render_sidebar
@@ -258,7 +259,8 @@ else:
 
 st.divider()
 render_expectancy_panel(tl_df, settings)
-
+st.divider()
+render_discipline_panel(tl_df, settings, downshift_risk_to=12.5)
 # ====== Auto-refresh ======
 stop_now = st.session_state.guardrails_hit  # pause refresh if guardrails tripped
 if settings["enable_refresh"] and not stop_now:
