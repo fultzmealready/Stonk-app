@@ -155,26 +155,37 @@ with colC2:
     else: st.plotly_chart(plot_with_orb_em("QQQ", qqq_df, orb_minutes=ORB_MINUTES), use_container_width=True, key="qqq_chart")
 
 # ====== Guardrails: load log, compute today's P/L, set thresholds ======
-tl_df = load_trade_log(TRADE_LOG)
+# Ensure TRADE_LOG exists somewhere near your constants:
+# TRADE_LOG = "0dte_trade_log.csv"
 
-# Today's P/L in $
+# Safe defaults
+guardrails_hit = False
+todays_pl = 0.0
+
+# Load log + compute P/L
+tl_df = load_trade_log(TRADE_LOG)
 todays_pl = compute_daily_pl(tl_df)
 
-# Account size from sidebar settings
+# Pull account size from the sidebar settings dict
 acct_size = float(settings.get("acct", 0.0))
 
-# Thresholds (+30% / −20%)
-up_guard   = 0.30 * acct_size if acct_size > 0 else float("inf")
-down_guard = -0.20 * acct_size if acct_size > 0 else float("-inf")
+# Guardrail thresholds (+30% / −20%)
+if acct_size > 0:
+    up_guard   = 0.30 * acct_size
+    down_guard = -0.20 * acct_size
+    breach_up   = todays_pl >= up_guard
+    breach_down = todays_pl <= down_guard
+    guardrails_hit = breach_up or breach_down
 
-breach_up = acct_size > 0 and todays_pl >= up_guard
-breach_down = acct_size > 0 and todays_pl <= down_guard
-guardrails_hit = bool(breach_up or breach_down)
-
-# Banner if tripped
-if guardrails_hit:
-    st.error("🛑 STOP TRADING — Daily guardrail hit "
-             + ("(+30% target reached)" if breach_up else "(−20% loss limit)"))
+    if guardrails_hit:
+        st.error(
+            "🛑 STOP TRADING — Daily guardrail hit "
+            + ("(+30% target reached)" if breach_up else "(−20% loss limit)")
+        )
+else:
+    # If acct not set, don't trip guardrails; just show info
+    up_guard = down_guard = float("nan")
+    st.info("Set your Account size in the sidebar to enable daily guardrails.")
 
 # ====== Trade Logger ======
 st.subheader("Trade Logger")
