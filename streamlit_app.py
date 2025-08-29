@@ -292,11 +292,6 @@ with st.form("trade_submit_form", clear_on_submit=False):
         st.success("Trade added to Google Sheet.")
         st.rerun()
 
-    if del_btn and to_delete_ids:
-        new_df = delete_by_ids(to_delete_ids)
-        st.success(f"Deleted {len(to_delete_ids)} trade(s).")
-        st.rerun()
-
 # ==== Load from Google Sheets ====
 df = load_trades()
 
