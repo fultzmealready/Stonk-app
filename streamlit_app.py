@@ -154,18 +154,58 @@ with colC2:
 
 # ====== Trade Logger ======
 st.subheader("Trade Logger")
-with st.form("trade_log_form", clear_on_submit=False):
-    new_row_df = render_trade_form(default_symbol="SPY", default_side="CALL", default_entry=20.0)
-    # Handle saving inside the same form block for atomicity
-    if new_row_df is not None:
-        existing = load_trade_log(get_log_path())
-        updated = pd.concat([existing, new_row_df], ignore_index=True)
-        save_trade_log(updated, get_log_path())
 
-df_log = load_trade_log(get_log_path())
-render_trade_log(df_log)
-todays_pl = compute_daily_pl(df_log)
-st.caption(f"Today's P/L (approx): ${todays_pl:.2f}")
+disable_form = guardrails_hit
+
+with st.form("trade_log_form", clear_on_submit=False):
+    col1, col2, col3, col4 = st.columns([1,1,1,1])
+    with col1:
+        sym = st.selectbox("Symbol", ["SPY","QQQ"], index=0, disabled=disable_form)
+    with col2:
+        side = st.selectbox("Direction", ["CALL","PUT"], index=0, disabled=disable_form)
+    with col3:
+        # default strike near last
+        base_last = spy_last if sym=="SPY" else qqq_last
+        strike_default = float("nan") if (base_last is None or math.isnan(base_last)) else float(round(base_last))
+        strike = st.number_input("Strike", min_value=0.0, value=strike_default, step=1.0, disabled=disable_form)
+    with col4:
+        qty = st.number_input("Qty (contracts)", min_value=1, value=1, step=1, disabled=disable_form)
+
+    col5, col6, col7 = st.columns([1,1,2])
+    with col5:
+        entry = st.number_input("Entry ($/contract)", min_value=0.0, value=20.0, step=0.5, disabled=disable_form)
+    with col6:
+        exitp = st.number_input("Exit ($/contract)", min_value=0.0, value=0.0, step=0.5, disabled=disable_form)
+    with col7:
+        notes = st.text_input("Notes", value="", disabled=disable_form)
+
+    # Live preview of targets/stop
+    tgt100, tgt120, stop30 = compute_levels(entry if entry > 0 else float("nan"))
+    cA, cB, cC = st.columns(3)
+    cA.metric("+100% target", f"${tgt100:.2f}" if tgt100==tgt100 else "—")
+    cB.metric("+120% raw",   f"${tgt120:.2f}" if tgt120==tgt120 else "—")
+    cC.metric("−30% stop",   f"${stop30:.2f}" if stop30==stop30 else "—")
+
+    submitted = st.form_submit_button("Add trade", disabled=disable_form)
+
+    if submitted:
+        time_str = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
+        base_df = tl_df if not tl_df.empty else pd.DataFrame(columns=expected_columns())
+        new_df = append_trade(
+            base_df,
+            time_str=time_str, symbol=sym, side=side, strike=strike, qty=qty,
+            entry=entry, exitp=exitp, notes=notes
+        )
+        save_trade_log(new_df, TRADE_LOG)
+        st.success("Trade added to log.")
+
+        # Toast the guard levels for quick reference
+        st.toast(f"Targets: +100% ${tgt100:.2f}, +120% ${tgt120:.2f} • Stop: ${stop30:.2f}", icon="🎯")
+
+        # Soft reminder of daily guardrails
+        st.toast(f"Daily guardrails: STOP TRADING if P/L ≥ ${up_guard:.0f} or ≤ ${down_guard:.0f}", icon="⚠️")
+        st.rerun()
+
 
 # Load existing log and compute today's P/L
 tl_df = load_trade_log(TRADE_LOG)
