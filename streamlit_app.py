@@ -21,23 +21,10 @@ from trade_log import (
     compute_daily_pl, compute_levels
 )
 
-from sheets_store import load_trades as load_trade_log
-from sheets_store import save_trades as save_trade_log
-from sheets_store import append_trade_row as append_trade
-from sheets_store import delete_by_ids as delete_trades_by_id
-def load_trade_log(_path: str | None = None):
-    return load_trades()
-
-def save_trade_log(df, _path: str | None = None):
-    return save_trades(df)
-
-def append_trade(base_df, *, time_str, symbol, side, strike, qty, entry, exitp, notes):
-    # append_trade_row already loads+saves; we return its updated df to match your flow
-    return append_trade_row(time_str=time_str, symbol=symbol, side=side, strike=strike,
-                            qty=qty, entry=entry, exitp=exitp, notes=notes)
-
-def delete_trades_by_id(ids):
-    return delete_by_ids(ids)
+from sheets_store import load_trades
+from sheets_store import save_trades 
+from sheets_store import append_trade_row 
+from sheets_store import delete_by_ids 
 
 from discipline import render_discipline_panel
 
@@ -294,7 +281,7 @@ with st.form("trade_submit_form", clear_on_submit=False):
         time_str = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
         base_df = tl_df if not tl_df.empty else pd.DataFrame(columns=expected_columns())
 
-        new_df = append_trade(
+        new_df = append_trade_row(
             base_df,
             time_str=time_str,
             symbol=sym,
@@ -305,14 +292,14 @@ with st.form("trade_submit_form", clear_on_submit=False):
             exitp=exitp_val,
             notes=notes_val,
         )
-        save_trade_log(new_df, TRADE_LOG)
+        save_trades(df)
         st.success("Trade added to log.")
         st.toast(f"Targets: +100% ${tgt100:.2f}, +120% ${tgt120:.2f} • Stop: ${stop30:.2f}", icon="🎯")
         st.rerun()
 
 
 # ====== P/L + table + download ======
-tl_df = load_trade_log(TRADE_LOG)
+tl_df = load_trades()
 
 st.caption(f"Today's P/L (approx): ${todays_pl:.2f}")
 
@@ -356,7 +343,7 @@ if not tl_df.empty:
         )
 
     if del_btn and to_delete_ids:
-        new_df = delete_and_save(to_delete_ids, TRADE_LOG)
+        new_df = delete_by_ids(ids)
         st.success(f"Deleted {len(to_delete_ids)} trade(s).")
         st.rerun()
 else:
