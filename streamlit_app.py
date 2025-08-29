@@ -6,9 +6,9 @@ import numpy as np
 import plotly.express as px
 import gspread
 import uuid
+
 from google.oauth2.service_account import Credentials
 from zoneinfo import ZoneInfo
-
 from taapi_client import taapi_bulk, make_stock_construct, get_taapi_candles
 from data_sources import get_intraday_1m_yf, get_futures_quote, sector_breadth_yf
 from indicators import (
@@ -23,17 +23,10 @@ from trade_log import (
     load_trade_log, save_trade_log,
     delete_and_save, append_trade,
 )
-
-from sheets_store import load_trades
-from sheets_store import save_trades 
-from sheets_store import append_trade_row 
-from sheets_store import delete_by_ids 
-
+from sheets_store import load_trades, save_trades, append_trade_row, delete_by_ids, _open_sheet
 from discipline import render_discipline_panel
-
 from guardrails import check_daily_limits
 from components.sidebar import render_sidebar
-
 from expectancy import render_expectancy_panel, suggest_target_badge
 
 st.set_page_config(page_title="0DTE Cockpit — SPY & QQQ", layout="wide")
@@ -126,6 +119,16 @@ st.dataframe(
     pd.DataFrame(rows, columns=["Sector", "Last", "VWAP", "Green"]).style.format({"Last":"{:.2f}","VWAP":"{:.2f}"}),
     use_container_width=True
 )
+
+# internal helper in the module we wrote
+ws, err = _open_sheet()
+if ws is not None:
+    st.success("Google Sheets: connected ✅")
+    st.caption(f"Spreadsheet tab: {ws.title}")
+else:
+    st.error("Google Sheets: NOT connected ❌ (falling back to CSV)")
+    if err:
+        st.code(err)
 
 # ====== Bias & Confidence ======
 es_green = (es_chg > 0) if not math.isnan(es_chg) else None
