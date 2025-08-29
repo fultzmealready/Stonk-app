@@ -278,6 +278,7 @@ with st.form("trade_submit_form", clear_on_submit=False):
         pl_pct = ((exitp - entry) / entry * 100.0) if entry > 0 and exitp > 0 else float("nan")
         # append directly to Google Sheet
         append_trade_row(
+            id=str(uuid.uuid4()),
             time_str=pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"),
             symbol=sym,
             side=side,
@@ -297,30 +298,51 @@ with st.form("trade_submit_form", clear_on_submit=False):
         st.rerun()
 
 # ==== Load from Google Sheets ====
-df = load_trades()  # returns a DataFrame from your Sheet
+df = load_trades()
 
-st.caption(f"Today's P/L (approx): ${todays_pl:.2f}")
+todays_pl = 0.0
 if df is not None and not df.empty:
-    # make sure types are right
+    # --- compute today P/L (unchanged) ---
     if "time" in df.columns:
         df["date"] = pd.to_datetime(df["time"], errors="coerce").dt.date
         tdf_today = df[df["date"] == pd.Timestamp.now().date()].copy()
+        if not tdf_today.empty:
+            tdf_today["pl_$"] = tdf_today.apply(
+                lambda r: (float(r.get("p_l_pct", 0)) / 100.0) * float(r.get("entry", 0)) * int(r.get("qty", 0)),
+                axis=1
+            )
+            todays_pl = float(tdf_today["pl_$"].sum())
+
+    # --- deletion UI (uses 'id') ---
+    if "id" not in df.columns:
+        st.warning("No 'id' column found. Add ids on insert to enable per-row deletion.")
     else:
-        tdf_today = pd.DataFrame([])
+        view = df.copy()
+        view.insert(0, "Select", False)
 
-    if not tdf_today.empty:
-        # p_l_pct is percent; entry is $/contract; qty contracts
-        tdf_today["pl_$"] = tdf_today.apply(
-            lambda r: (float(r.get("p_l_pct", 0)) / 100.0) * float(r.get("entry", 0)) * int(r.get("qty", 0)),
-            axis=1
+        edited = st.data_editor(
+            view,
+            use_container_width=True,
+            hide_index=True,
+            column_config={"Select": st.column_config.CheckboxColumn(required=False)},
+            disabled=[c for c in view.columns if c != "Select"],
+            key="trade_table_editor",
         )
-        todays_pl = float(tdf_today["pl_$"].sum())
 
-    # show tail of trades
-    show_cols = [c for c in df.columns if c != "date"]
-    st.dataframe(df.tail(20)[show_cols], use_container_width=True, hide_index=True)
+        # Get the ids for rows where Select == True
+        to_delete_ids = edited.loc[edited["Select"] == True, "id"].astype(str).tolist()
 
-    # download full sheet snapshot
+        left, right = st.columns([1, 3])
+        with left:
+            if st.button("🗑️ Delete selected"):
+                if to_delete_ids:
+                    new_df = delete_by_ids(to_delete_ids)   # <-- your helper
+                    st.success(f"Deleted {len(to_delete_ids)} trade(s).")
+                    st.rerun()
+                else:
+                    st.info("No rows selected.")
+
+    # Download snapshot
     st.download_button(
         "Download full trade log (CSV)",
         data=df.to_csv(index=False).encode("utf-8"),
@@ -329,6 +351,8 @@ if df is not None and not df.empty:
     )
 else:
     st.caption("No trades logged yet.")
+
+st.caption(f"Today's P/L (approx): ${todays_pl:.2f}")
 
 st.divider()
 with st.expander("📈 Expectancy Roadmap (playbook-aligned)", expanded=True):
