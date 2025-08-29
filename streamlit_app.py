@@ -25,6 +25,20 @@ from sheets_store import load_trades as load_trade_log
 from sheets_store import save_trades as save_trade_log
 from sheets_store import append_trade_row as append_trade
 from sheets_store import delete_by_ids as delete_trades_by_id
+def load_trade_log(_path: str | None = None):
+    return load_trades()
+
+def save_trade_log(df, _path: str | None = None):
+    return save_trades(df)
+
+def append_trade(base_df, *, time_str, symbol, side, strike, qty, entry, exitp, notes):
+    # append_trade_row already loads+saves; we return its updated df to match your flow
+    return append_trade_row(time_str=time_str, symbol=symbol, side=side, strike=strike,
+                            qty=qty, entry=entry, exitp=exitp, notes=notes)
+
+def delete_trades_by_id(ids):
+    return delete_by_ids(ids)
+
 from discipline import render_discipline_panel
 
 from guardrails import check_daily_limits
