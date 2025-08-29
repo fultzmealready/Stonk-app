@@ -167,8 +167,22 @@ render_trade_log(df_log)
 todays_pl = compute_daily_pl(df_log)
 st.caption(f"Today's P/L (approx): ${todays_pl:.2f}")
 
-# ====== Guardrails ======
-stop_now = check_daily_limits(settings["account_size"], todays_pl, stop_up_pct=30.0, stop_down_pct=-20.0)
+# Load existing log and compute today's P/L
+tl_df = load_trade_log(TRADE_LOG)
+todays_pl = compute_daily_pl(tl_df)
+
+# Guardrails thresholds
+acct_size = acct
+up_guard  = 0.30 * acct_size   # +30%
+down_guard= -0.20 * acct_size  # -20%
+
+breach_up   = todays_pl >= up_guard
+breach_down = todays_pl <= down_guard
+guardrails_hit = breach_up or breach_down
+
+if guardrails_hit:
+    banner = "🟢 STOP TRADING — Daily target hit (+30%)" if breach_up else "🔴 STOP TRADING — Daily loss limit reached (−20%)"
+    st.error(banner)  # big banner
 
 # ====== Auto-refresh ======
 if settings["enable_refresh"] and not stop_now:
