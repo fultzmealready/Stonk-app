@@ -24,14 +24,31 @@ def get_intraday_1m_yf(ticker: str, period: str = "2d", include_ext_hours: bool 
         return pd.DataFrame()
 
 
-def sector_breadth_yf(tickers: list[str]) -> tuple[list[tuple], float]:
+def sector_breadth_yf(tickers):
     """
-    For each sector, compute last and VWAP, and % of sectors above VWAP.
+    Returns:
+      rows = [(ticker, last, vwap, is_green), ...]
+      breadth_pct = % of rows where last > vwap
     """
+
+    def _to_float(x):
+        """Always return a scalar float (NaN on failure)."""
+        try:
+            if isinstance(x, pd.Series):
+                x = x.iloc[-1]
+            return float(x)
+        except Exception:
+            return float("nan")
+
+    # Pull 1m for today
     try:
         data = yf.download(
-            tickers, period="1d", interval="1m",
-            auto_adjust=False, progress=False, group_by="ticker", prepost=False
+            tickers,
+            period="1d",
+            interval="1m",
+            auto_adjust=False,
+            progress=False,
+            group_by="ticker",
         )
     except Exception:
         data = None
@@ -41,36 +58,38 @@ def sector_breadth_yf(tickers: list[str]) -> tuple[list[tuple], float]:
     total = 0
 
     for t in tickers:
-        # get a 1m df for this ticker
+        # Get per-ticker frame (or fallback)
         try:
-            df = data[t] if data is not None else get_intraday_1m_yf(t)
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = [c[0] for c in df.columns]
-            df = df.rename(columns=str.title).dropna()
+            if data is not None:
+                df = data[t]
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = [c[0] for c in df.columns]
+                df = df.rename(columns=str.title).dropna()
+            else:
+                df = get_intraday_1m_yf(t)  # your existing helper
         except Exception:
             df = pd.DataFrame()
 
-        if df is None or df.empty:
+        if df is None or df.empty or "Close" not in df.columns:
             rows.append((t, float("nan"), float("nan"), False))
             continue
 
-        # robust scalars (avoid FutureWarning)
-        last_scalar = pd.to_numeric(df["Close"].iloc[-1], errors="coerce")
-        vwap_series = compute_vwap_from_df(df)
-        vwap_scalar = pd.to_numeric(vwap_series.iloc[-1], errors="coerce")
-        last = float(last_scalar) if pd.notna(last_scalar) else float("nan")
-        vwap = float(vwap_scalar) if pd.notna(vwap_scalar) else float("nan")
+        # ---- SCALARS ONLY ----
+        last = _to_float(df["Close"].iloc[-1])
+        vwap_s = compute_vwap_from_df(df)
+        vwap = _to_float(vwap_s.iloc[-1] if vwap_s is not None and not vwap_s.empty else np.nan)
 
         ok = not (math.isnan(last) or math.isnan(vwap))
         is_green = (ok and last > vwap)
+
         rows.append((t, last if ok else float("nan"), vwap if ok else float("nan"), is_green))
         if ok:
             total += 1
             if is_green:
                 green += 1
 
-    breadth = (green / total * 100.0) if total else float("nan")
-    return rows, breadth
+    breadth_pct = (green / total * 100.0) if total else float("nan")
+    return rows, breadth_pct
 
 def get_futures_quote(sym):
     try:
