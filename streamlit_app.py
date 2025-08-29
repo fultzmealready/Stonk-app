@@ -188,7 +188,7 @@ if "guardrails_hit" not in st.session_state:
     st.session_state.guardrails_hit = False
 
 # Load log + compute today's P/L
-tl_df = load_trade_log(TRADE_LOG)
+tl_df = load_trades()
 todays_pl = compute_daily_pl(tl_df)
 
 # Account size from sidebar settings
