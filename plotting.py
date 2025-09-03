@@ -105,6 +105,6 @@ def plot_with_orb_em(ticker: str, df: pd.DataFrame, orb_minutes: int = 15, hours
         title=f"{ticker} — 24h",
         height=420,
         xaxis_rangeslider_visible=False,
-        margin=dict(l=10, r=10, t=50, b=10)
+        margin=dict(l=10, r=10, t=30, b=10)
     )
     return fig
